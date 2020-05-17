@@ -20,7 +20,7 @@ from __future__ import print_function
 import collections
 
 # Dependency imports
-import tensorflow as tf
+import tensorflow.compat.v2 as tf
 
 from tensorflow_probability.python.internal import distribution_util as dist_util
 from tensorflow_probability.python.sts.internal import util as sts_util
@@ -74,7 +74,7 @@ def _decompose_from_posterior_marginals(
     raise ValueError('Model decomposed into components must be an instance of'
                      '`tfp.sts.Sum` (passed model {})'.format(model))
 
-  with tf.compat.v1.name_scope('decompose_from_posterior_marginals'):
+  with tf.name_scope('decompose_from_posterior_marginals'):
 
     # Extract the component means/covs from the joint latent posterior.
     latent_sizes = [component.latent_size for component in model.components]
@@ -85,7 +85,7 @@ def _decompose_from_posterior_marginals(
     # Instantiate per-component state space models, and use them to push the
     # posterior means/covs through the observation model for each component.
     num_timesteps = dist_util.prefer_static_value(
-        tf.shape(input=posterior_means))[-2]
+        tf.shape(posterior_means))[-2]
     component_ssms = model.make_component_state_space_models(
         num_timesteps=num_timesteps,
         param_vals=parameter_samples)
@@ -198,8 +198,7 @@ def decompose_by_component(model, observed_time_series, parameter_samples):
 
   """
 
-  with tf.compat.v1.name_scope('decompose_by_component',
-                               values=[observed_time_series]):
+  with tf.name_scope('decompose_by_component'):
     [
         observed_time_series,
         is_missing
@@ -209,7 +208,7 @@ def decompose_by_component(model, observed_time_series, parameter_samples):
     # Run smoothing over the training timesteps to extract the
     # posterior on latents.
     num_timesteps = dist_util.prefer_static_value(
-        tf.shape(input=observed_time_series))[-2]
+        tf.shape(observed_time_series))[-2]
     ssm = model.make_state_space_model(num_timesteps=num_timesteps,
                                        param_vals=parameter_samples)
     posterior_means, posterior_covs = ssm.posterior_marginals(
@@ -301,7 +300,7 @@ def decompose_forecast_by_component(model, forecast_dist, parameter_samples):
 
   """
 
-  with tf.compat.v1.name_scope('decompose_forecast_by_component'):
+  with tf.name_scope('decompose_forecast_by_component'):
     try:
       forecast_lgssm = forecast_dist.components_distribution
       forecast_latent_mean, _ = forecast_lgssm._joint_mean()  # pylint: disable=protected-access

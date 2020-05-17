@@ -25,14 +25,14 @@ from absl.testing import parameterized
 import hypothesis as hp
 from hypothesis import strategies as hps
 import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v2 as tf
 
 from tensorflow_probability.python.internal import hypothesis_testlib as tfp_hps
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import
+from tensorflow_probability.python.internal import test_util
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class HypothesisTestlibTest(parameterized.TestCase, tf.test.TestCase):
+@test_util.test_all_tf_execution_regimes
+class HypothesisTestlibTest(test_util.TestCase):
 
   @parameterized.parameters((support,) for support in tfp_hps.ALL_SUPPORTS)
   @hp.given(hps.data())

@@ -19,17 +19,15 @@ from __future__ import division
 from __future__ import print_function
 
 import collections
+
 # Dependency imports
+
 import numpy as np
-
-import tensorflow as tf
+import tensorflow.compat.v2 as tf
 import tensorflow_probability as tfp
-
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import
-
-
-tfd = tfp.distributions
-tfb = tfp.bijectors
+from tensorflow_probability.python import bijectors as tfb
+from tensorflow_probability.python import distributions as tfd
+from tensorflow_probability.python.internal import test_util
 
 
 FakeInnerKernelResults = collections.namedtuple(
@@ -38,7 +36,7 @@ FakeInnerKernelResults = collections.namedtuple(
 
 def _maybe_seed(seed):
   if tf.executing_eagerly():
-    tf.compat.v1.set_random_seed(seed)
+    tf.random.set_seed(seed)
     return None
   return seed
 
@@ -46,8 +44,9 @@ def _maybe_seed(seed):
 class FakeInnerKernel(tfp.mcmc.TransitionKernel):
   """Fake Transition Kernel."""
 
-  def __init__(self, target_log_prob_fn):
-    self._parameters = dict(target_log_prob_fn=target_log_prob_fn)
+  def __init__(self, target_log_prob_fn, is_calibrated=True):
+    self._parameters = dict(
+        target_log_prob_fn=target_log_prob_fn, is_calibrated=is_calibrated)
 
   @property
   def parameters(self):
@@ -55,7 +54,7 @@ class FakeInnerKernel(tfp.mcmc.TransitionKernel):
 
   @property
   def is_calibrated(self):
-    return True
+    return self._parameters['is_calibrated']
 
   def one_step(self, current_state, previous_kernel_results):
     pass
@@ -65,8 +64,8 @@ class FakeInnerKernel(tfp.mcmc.TransitionKernel):
         target_log_prob=self._parameters['target_log_prob_fn'](init_state))
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class TransformedTransitionKernelTest(tf.test.TestCase):
+@test_util.test_all_tf_execution_regimes
+class TransformedTransitionKernelTest(test_util.TestCase):
 
   def setUp(self):
     super(TransformedTransitionKernelTest, self).setUp()
@@ -96,9 +95,9 @@ class TransformedTransitionKernelTest(tf.test.TestCase):
         num_steps_between_results=1,
         parallel_iterations=1)
     self.assertEqual(num_results, tf.compat.dimension_value(states.shape[0]))
-    sample_mean = tf.reduce_mean(input_tensor=states, axis=0)
+    sample_mean = tf.reduce_mean(states, axis=0)
     sample_var = tf.reduce_mean(
-        input_tensor=tf.math.squared_difference(states, sample_mean), axis=0)
+        tf.math.squared_difference(states, sample_mean), axis=0)
     [
         sample_mean_,
         sample_var_,
@@ -141,9 +140,9 @@ class TransformedTransitionKernelTest(tf.test.TestCase):
         num_steps_between_results=1,
         parallel_iterations=1)
     self.assertEqual(num_results, tf.compat.dimension_value(states.shape[0]))
-    sample_mean = tf.reduce_mean(input_tensor=states, axis=0)
+    sample_mean = tf.reduce_mean(states, axis=0)
     sample_var = tf.reduce_mean(
-        input_tensor=tf.math.squared_difference(states, sample_mean), axis=0)
+        tf.math.squared_difference(states, sample_mean), axis=0)
     [
         sample_mean_,
         sample_var_,
@@ -183,9 +182,9 @@ class TransformedTransitionKernelTest(tf.test.TestCase):
         num_steps_between_results=1,
         parallel_iterations=1)
     self.assertEqual(num_results, tf.compat.dimension_value(states.shape[0]))
-    sample_mean = tf.reduce_mean(input_tensor=states, axis=0)
+    sample_mean = tf.reduce_mean(states, axis=0)
     sample_var = tf.reduce_mean(
-        input_tensor=tf.math.squared_difference(states, sample_mean), axis=0)
+        tf.math.squared_difference(states, sample_mean), axis=0)
     [
         sample_mean_,
         sample_var_,
@@ -216,7 +215,7 @@ class TransformedTransitionKernelTest(tf.test.TestCase):
               np.linalg.cholesky(true_cov),
               z[..., tf.newaxis]),
           axis=-1)
-      return -0.5 * tf.reduce_sum(input_tensor=z**2., axis=-1)
+      return -0.5 * tf.reduce_sum(z**2., axis=-1)
 
     transformed_hmc = tfp.mcmc.TransformedTransitionKernel(
         inner_kernel=tfp.mcmc.HamiltonianMonteCarlo(
@@ -243,7 +242,7 @@ class TransformedTransitionKernelTest(tf.test.TestCase):
         parallel_iterations=1)
     states = tf.stack(states, axis=-1)
     self.assertEqual(num_results, tf.compat.dimension_value(states.shape[0]))
-    sample_mean = tf.reduce_mean(input_tensor=states, axis=0)
+    sample_mean = tf.reduce_mean(states, axis=0)
     x = states - sample_mean
     sample_cov = tf.matmul(x, x, transpose_a=True) / self.dtype(num_results)
     [sample_mean_, sample_cov_, is_accepted_] = self.evaluate([
@@ -252,7 +251,7 @@ class TransformedTransitionKernelTest(tf.test.TestCase):
     self.assertAllClose(true_mean, sample_mean_,
                         atol=0.06, rtol=0.)
     self.assertAllClose(true_cov, sample_cov_,
-                        atol=0., rtol=0.1)
+                        atol=0., rtol=0.16)
 
   def test_bootstrap_requires_xor_args(self):
     def fake_target_log_prob(x):
@@ -302,6 +301,16 @@ class TransformedTransitionKernelTest(tf.test.TestCase):
 
     self.assertAllClose(pkr.inner_results.target_log_prob,
                         pkr_copy.inner_results.target_log_prob)
+
+  def test_is_calibrated(self):
+    self.assertTrue(
+        tfp.mcmc.TransformedTransitionKernel(
+            FakeInnerKernel(lambda x: -x**2 / 2, True),
+            tfb.Identity()).is_calibrated)
+    self.assertFalse(
+        tfp.mcmc.TransformedTransitionKernel(
+            FakeInnerKernel(lambda x: -x**2 / 2, False),
+            tfb.Identity()).is_calibrated)
 
 
 if __name__ == '__main__':

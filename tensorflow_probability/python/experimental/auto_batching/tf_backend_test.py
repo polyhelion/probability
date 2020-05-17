@@ -25,15 +25,16 @@ from hypothesis import strategies as hps
 from hypothesis.extra import numpy as hpnp
 
 import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v2 as tf
 
 from tensorflow_probability.python.experimental.auto_batching import backend_test_lib as backend_test
 from tensorflow_probability.python.experimental.auto_batching import instructions as inst
 from tensorflow_probability.python.experimental.auto_batching import tf_backend
-
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import
+from tensorflow_probability.python.internal import hypothesis_testlib as tfp_hps
+from tensorflow_probability.python.internal import test_util
 
 # TODO(b/127689162): Restore testing complex dtypes.
+
 # TF_NP_DTYPES = [np.float32, np.float64, np.int32, np.complex64, np.bool]
 TF_NP_DTYPES = [np.float32, np.float64, np.int32, np.bool]
 TF_BACKEND = tf_backend.TensorFlowBackend()
@@ -48,8 +49,8 @@ def var_init(max_stack_depth, initial_value):
       initial_value, TF_BACKEND.full_mask(initial_value.shape[0]))
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class TFVariableTest(tf.test.TestCase, backend_test.VariableTestCase):
+@test_util.test_all_tf_execution_regimes
+class TFVariableTest(test_util.TestCase, backend_test.VariableTestCase):
 
   def testTFSmoke(self):
     """Test the property on specific example, without relying on Hypothesis."""
@@ -64,9 +65,7 @@ class TFVariableTest(tf.test.TestCase, backend_test.VariableTestCase):
         exception_types=(ValueError, tf.errors.InvalidArgumentError))
 
   @hp.given(hps.data())
-  @hp.settings(
-      deadline=None,
-      max_examples=100)
+  @tfp_hps.tfp_hp_settings()
   def testTFVariableRandomOps(self, data):
     # Hypothesis strategy:
     # Generate a random max stack depth and value shape

@@ -19,16 +19,15 @@ from __future__ import print_function
 import collections
 
 # Dependency imports
+
 import numpy as np
 import tensorflow.compat.v1 as tf1
 import tensorflow.compat.v2 as tf
-import tensorflow_probability as tfp
-
+from tensorflow_probability.python import distributions as tfd
 from tensorflow_probability.python.internal import tensorshape_util
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
+from tensorflow_probability.python.internal import test_util
 
-
-tfd = tfp.distributions
+from tensorflow.python.framework import test_util as tf_test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
 
 
 class TupleDistribution(tfd.Distribution):
@@ -108,11 +107,11 @@ class NamedTupleDistribution(tfd.Distribution):
         a=None, b=tf.TensorShape([3, None]), c=tf.TensorShape(None))
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class DistributionStrReprTest(tf.test.TestCase):
+@test_util.test_all_tf_execution_regimes
+class DistributionStrReprTest(test_util.TestCase):
 
   def testStrWorksCorrectlyScalar(self):
-    normal = tfd.Normal(loc=np.float16(0), scale=1)
+    normal = tfd.Normal(loc=np.float16(0), scale=1, validate_args=True)
     self.assertEqual(
         str(normal),
         'tfp.distributions.Normal('
@@ -121,7 +120,7 @@ class DistributionStrReprTest(tf.test.TestCase):
         'event_shape=[], '
         'dtype=float16)')
 
-    chi2 = tfd.Chi2(df=np.float32([1., 2.]), name='silly')
+    chi2 = tfd.Chi2(df=np.float32([1., 2.]), name='silly', validate_args=True)
     self.assertEqual(
         str(chi2),
         'tfp.distributions.Chi2('
@@ -135,7 +134,8 @@ class DistributionStrReprTest(tf.test.TestCase):
     if tf.executing_eagerly():
       return
 
-    exp = tfd.Exponential(rate=tf1.placeholder_with_default(1., shape=None))
+    exp = tfd.Exponential(
+        rate=tf1.placeholder_with_default(1., shape=None), validate_args=True)
     self.assertEqual(
         str(exp),
         'tfp.distributions.Exponential("Exponential", '
@@ -145,7 +145,7 @@ class DistributionStrReprTest(tf.test.TestCase):
 
   def testStrWorksCorrectlyMultivariate(self):
     mvn_static = tfd.MultivariateNormalDiag(
-        loc=np.zeros([2, 2]), name='MVN')
+        loc=np.zeros([2, 2]), name='MVN', validate_args=True)
     self.assertEqual(
         str(mvn_static),
         'tfp.distributions.MultivariateNormalDiag('
@@ -162,7 +162,8 @@ class DistributionStrReprTest(tf.test.TestCase):
     mvn_dynamic = tfd.MultivariateNormalDiag(
         loc=tf1.placeholder_with_default(
             np.ones((3, 3), dtype=np.float32), shape=[None, 3]),
-        name='MVN2')
+        name='MVN2',
+        validate_args=True)
     self.assertEqual(
         str(mvn_dynamic),
         'tfp.distributions.MultivariateNormalDiag('
@@ -172,7 +173,8 @@ class DistributionStrReprTest(tf.test.TestCase):
         'dtype=float32)')
 
   def testReprWorksCorrectlyScalar(self):
-    normal = tfd.Normal(loc=np.float16(0), scale=np.float16(1))
+    normal = tfd.Normal(
+        loc=np.float16(0), scale=np.float16(1), validate_args=True)
     self.assertEqual(
         repr(normal),
         '<tfp.distributions.Normal'
@@ -181,7 +183,7 @@ class DistributionStrReprTest(tf.test.TestCase):
         ' event_shape=[]'
         ' dtype=float16>')
 
-    chi2 = tfd.Chi2(df=np.float32([1., 2.]), name='silly')
+    chi2 = tfd.Chi2(df=np.float32([1., 2.]), name='silly', validate_args=True)
     self.assertEqual(
         repr(chi2),
         '<tfp.distributions.Chi2'
@@ -195,7 +197,8 @@ class DistributionStrReprTest(tf.test.TestCase):
     if tf.executing_eagerly():
       return
 
-    exp = tfd.Exponential(rate=tf1.placeholder_with_default(1., shape=None))
+    exp = tfd.Exponential(
+        rate=tf1.placeholder_with_default(1., shape=None), validate_args=True)
     self.assertEqual(
         repr(exp),
         '<tfp.distributions.Exponential'
@@ -206,7 +209,7 @@ class DistributionStrReprTest(tf.test.TestCase):
 
   def testReprWorksCorrectlyMultivariate(self):
     mvn_static = tfd.MultivariateNormalDiag(
-        loc=np.zeros([2, 2]), name='MVN')
+        loc=np.zeros([2, 2]), name='MVN', validate_args=True)
     self.assertEqual(
         repr(mvn_static),
         '<tfp.distributions.MultivariateNormalDiag'
@@ -223,7 +226,8 @@ class DistributionStrReprTest(tf.test.TestCase):
     mvn_dynamic = tfd.MultivariateNormalDiag(
         loc=tf1.placeholder_with_default(
             np.ones((3, 3), dtype=np.float32), shape=[None, 3]),
-        name='MVN2')
+        name='MVN2',
+        validate_args=True)
     self.assertEqual(
         repr(mvn_dynamic),
         '<tfp.distributions.MultivariateNormalDiag'
@@ -281,8 +285,8 @@ class DistributionStrReprTest(tf.test.TestCase):
         ' dtype=MyType(a=float16, b=?, c=int32)>')
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class DistributionTest(tf.test.TestCase):
+@test_util.test_all_tf_execution_regimes
+class DistributionTest(test_util.TestCase):
 
   def testParamShapesAndFromParams(self):
     classes = [
@@ -299,17 +303,21 @@ class DistributionTest(tf.test.TestCase):
     ]
 
     sample_shapes = [(), (10,), (10, 20, 30)]
+    seed_stream = test_util.test_seed_stream('param_shapes')
     for cls in classes:
       for sample_shape in sample_shapes:
         param_shapes = cls.param_shapes(sample_shape)
-        params = dict([(name, tf.random.normal(shape))
+        params = dict([(name, tf.random.normal(shape, seed=seed_stream()))
                        for name, shape in param_shapes.items()])
         dist = cls(**params)
-        self.assertAllEqual(sample_shape,
-                            self.evaluate(tf.shape(dist.sample())))
+        self.assertAllEqual(
+            sample_shape,
+            self.evaluate(tf.shape(dist.sample(seed=seed_stream()))))
         dist_copy = dist.copy()
-        self.assertAllEqual(sample_shape,
-                            self.evaluate(tf.shape(dist_copy.sample())))
+        self.assertAllEqual(
+            sample_shape,
+            self.evaluate(tf.shape(dist_copy.sample(
+                seed=seed_stream()))))
         self.assertEqual(dist.parameters, dist_copy.parameters)
 
   def testCopyExtraArgs(self):
@@ -317,7 +325,9 @@ class DistributionTest(tf.test.TestCase):
     # different initialization arguments. We therefore spot test a few.
     normal = tfd.Normal(loc=1., scale=2., validate_args=True)
     self.assertEqual(normal.parameters, normal.copy().parameters)
-    wishart = tfd.Wishart(df=2, scale=[[1., 2], [2, 5]], validate_args=True)
+    wishart = tfd.WishartTriL(
+        df=2, scale_tril=tf.linalg.cholesky([[1., 2], [2, 5]]),
+        validate_args=True)
     self.assertEqual(wishart.parameters, wishart.copy().parameters)
 
   def testCopyOverride(self):
@@ -455,10 +465,13 @@ class DistributionTest(tf.test.TestCase):
     x_duplicate = tfd.Normal(loc=0., scale=1., name='x')
     with tf.name_scope('y') as name:
       y = tfd.Bernoulli(logits=0., name=name)
-    x_sample = x.sample(name='custom_sample')
-    x_sample_duplicate = x.sample(name='custom_sample')
+    x_sample = x.sample(
+        name='custom_sample', seed=test_util.test_seed())
+    x_sample_duplicate = x.sample(
+        name='custom_sample', seed=test_util.test_seed())
     x_log_prob = x.log_prob(0., name='custom_log_prob')
-    x_duplicate_sample = x_duplicate.sample(name='custom_sample')
+    x_duplicate_sample = x_duplicate.sample(
+        name='custom_sample', seed=test_util.test_seed())
 
     self.assertStartsWith(x.name, 'x')
     self.assertStartsWith(y.name, 'y')
@@ -506,6 +519,14 @@ class DistributionTest(tf.test.TestCase):
     ):
       list(normal)
 
+  def testQuantileOutOfBounds(self):
+    normal = tfd.Normal(loc=0., scale=1., validate_args=True)
+    self.evaluate(normal.quantile(0.01))
+    with self.assertRaisesOpError(r'must be >= 0'):
+      self.evaluate(normal.quantile(-.01))
+    with self.assertRaisesOpError(r'must be <= 1'):
+      self.evaluate(normal.quantile(1.01))
+
 
 class Dummy(tfd.Distribution):
 
@@ -522,7 +543,7 @@ class Dummy(tfd.Distribution):
     return self._mean_
 
 
-class ParametersTest(tf.test.TestCase):
+class ParametersTest(test_util.TestCase):
 
   def testParameters(self):
     d = Dummy(1., arg2=2.)
@@ -531,7 +552,7 @@ class ParametersTest(tf.test.TestCase):
                      actual_d_parameters)
     self.assertEqual(actual_d_parameters, d.parameters)
 
-  @test_util.run_in_graph_and_eager_modes(assert_no_eager_garbage=True)
+  @tf_test_util.run_in_graph_and_eager_modes(assert_no_eager_garbage=True)
   def testNoSelfRefs(self):
     d = Dummy(1., arg2=2.)
     self.assertAllEqual(1. + 2., self.evaluate(d.mean()))
@@ -540,22 +561,25 @@ class ParametersTest(tf.test.TestCase):
     if not tf.executing_eagerly(): return
     @tf.function
     def normal_differential_entropy(scale):
-      return tfd.Normal(0., scale).entropy()
+      return tfd.Normal(0., scale, validate_args=True).entropy()
+
     scale = 0.25
     self.assertNear(0.5 * np.log(2. * np.pi * np.e * scale**2.),
-                    normal_differential_entropy(scale).numpy(),
+                    self.evaluate(normal_differential_entropy(scale)),
                     err=1e-5)
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class TfModuleTest(tf.test.TestCase):
+@test_util.test_all_tf_execution_regimes
+class TfModuleTest(test_util.TestCase):
 
+  @test_util.jax_disable_variable_test
   def test_variable_tracking_works(self):
     scale = tf.Variable(1.)
     normal = tfd.Normal(loc=0, scale=scale, validate_args=True)
     self.assertIsInstance(normal, tf.Module)
     self.assertEqual((scale,), normal.trainable_variables)
 
+  @test_util.tf_tape_safety_test
   def test_gradient(self):
     scale = tf.Variable(1.)
     normal = tfd.Normal(loc=0, scale=scale, validate_args=True)
@@ -567,8 +591,8 @@ class TfModuleTest(tf.test.TestCase):
     self.assertEqual((1.,), self.evaluate(g))
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class ConditionalDistributionTest(tf.test.TestCase):
+@test_util.test_all_tf_execution_regimes
+class ConditionalDistributionTest(test_util.TestCase):
 
   def _GetFakeDistribution(self):
     class _FakeDistribution(tfd.Distribution):
@@ -590,7 +614,8 @@ class ConditionalDistributionTest(tf.test.TestCase):
       def _event_shape(self):
         return self._static_event_shape
 
-      def _sample_n(self, unused_shape, unused_seed, arg1, arg2):
+      def _sample_n(self, unused_shape, seed, arg1, arg2):
+        del seed  # Unused.
         raise ValueError(arg1, arg2)
 
       def _log_prob(self, _, arg1, arg2):
@@ -619,7 +644,10 @@ class ConditionalDistributionTest(tf.test.TestCase):
                  'log_survival_function', 'survival_function']:
       method = getattr(d, name)
       with self.assertRaisesRegexp(ValueError, 'b1.*b2'):
-        method([] if name == 'sample' else 1.0, arg1='b1', arg2='b2')
+        if name == 'sample':
+          method([], seed=test_util.test_seed(), arg1='b1', arg2='b2')
+        else:
+          method(1.0, arg1='b1', arg2='b2')
 
   def _GetPartiallyImplementedDistribution(self):
     class _PartiallyImplementedDistribution(tfd.Distribution):

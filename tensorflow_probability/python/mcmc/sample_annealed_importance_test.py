@@ -19,36 +19,32 @@ from __future__ import division
 from __future__ import print_function
 
 import collections
+
 # Dependency imports
+
 import numpy as np
-
-import tensorflow as tf
+import tensorflow.compat.v1 as tf1
+import tensorflow.compat.v2 as tf
 import tensorflow_probability as tfp
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import
-
-tfd = tfp.distributions
-
-
-def _compute_sample_variance(x, axis=None, keepdims=False):
-  sample_mean = tf.reduce_mean(input_tensor=x, axis=axis, keepdims=True)
-  return tf.reduce_mean(
-      input_tensor=tf.math.squared_difference(x, sample_mean),
-      axis=axis,
-      keepdims=keepdims)
+from tensorflow_probability.python import bijectors as tfb
+from tensorflow_probability.python import distributions as tfd
+from tensorflow_probability.python.internal import test_util
 
 
-_maybe_seed = lambda s: tf.compat.v1.set_random_seed(s) if tf.executing_eagerly(
-) else s
+def _maybe_seed(s):
+  if tf.executing_eagerly():
+    return tf.random.set_seed(s)
+  return s
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class SampleAnnealedImportanceTest(tf.test.TestCase):
+@test_util.test_all_tf_execution_regimes
+class SampleAnnealedImportanceTest(test_util.TestCase):
 
   def setUp(self):
     self._shape_param = 5.
     self._rate_param = 10.
 
-    tf.compat.v1.random.set_random_seed(10003)
+    tf.random.set_seed(10003)
     np.random.seed(10003)
 
   def _log_gamma_log_prob(self, x, event_dims=()):
@@ -62,20 +58,20 @@ class SampleAnnealedImportanceTest(tf.test.TestCase):
       log_prob: The log-pdf up to a normalizing constant.
     """
     return tf.reduce_sum(
-        input_tensor=self._shape_param * x - self._rate_param * tf.exp(x),
+        self._shape_param * x - self._rate_param * tf.math.exp(x),
         axis=event_dims)
 
   # TODO(b/74154679): Create Fake TransitionKernel and not rely on HMC.
 
-  def _ais_gets_correct_log_normalizer(self, init, independent_chain_ndims):
+  def _ais_gets_correct_log_normalizer(self, init, independent_chain_ndims,
+                                       use_transformed_kernel=False):
     counter = collections.Counter()
 
     def proposal_log_prob(x):
       counter['proposal_calls'] += 1
       event_dims = tf.range(independent_chain_ndims, tf.rank(x))
-      return tf.reduce_sum(
-          input_tensor=tfd.Normal(loc=0., scale=1.).log_prob(x),
-          axis=event_dims)
+      return tf.reduce_sum(tfd.Normal(loc=0., scale=1.).log_prob(x),
+                           axis=event_dims)
 
     def target_log_prob(x):
       counter['target_calls'] += 1
@@ -84,13 +80,24 @@ class SampleAnnealedImportanceTest(tf.test.TestCase):
 
     num_steps = 200
 
-    def make_kernel(tlp_fn):
-      return tfp.mcmc.HamiltonianMonteCarlo(
-          target_log_prob_fn=tlp_fn,
-          step_size=0.5,
-          num_leapfrog_steps=2,
-          seed=_maybe_seed(make_kernel.seed()))
-    make_kernel.seed = tfp.distributions.SeedStream('make_kernel', 45)
+    if use_transformed_kernel:
+      def make_kernel(tlp_fn):
+        return tfp.mcmc.TransformedTransitionKernel(
+            inner_kernel=tfp.mcmc.HamiltonianMonteCarlo(
+                target_log_prob_fn=tlp_fn,
+                step_size=0.5,
+                num_leapfrog_steps=2,
+                seed=_maybe_seed(make_kernel.seed())),
+            bijector=tfb.Identity())
+    else:
+      def make_kernel(tlp_fn):
+        return tfp.mcmc.HamiltonianMonteCarlo(
+            target_log_prob_fn=tlp_fn,
+            step_size=0.5,
+            num_leapfrog_steps=2,
+            seed=_maybe_seed(make_kernel.seed()))
+
+    make_kernel.seed = tfp.util.SeedStream('make_kernel', 45)
 
     _, ais_weights, _ = tfp.mcmc.sample_annealed_importance_chain(
         num_steps=num_steps,
@@ -106,22 +113,21 @@ class SampleAnnealedImportanceTest(tf.test.TestCase):
     if not tf.executing_eagerly():
       self.assertAllEqual(dict(target_calls=5, proposal_calls=5), counter)
 
-    event_shape = tf.shape(input=init)[independent_chain_ndims:]
-    event_size = tf.reduce_prod(input_tensor=event_shape)
+    event_shape = tf.shape(init)[independent_chain_ndims:]
+    event_size = tf.reduce_prod(event_shape)
 
     log_true_normalizer = (-self._shape_param * tf.math.log(self._rate_param) +
                            tf.math.lgamma(self._shape_param))
     log_true_normalizer *= tf.cast(event_size, log_true_normalizer.dtype)
 
-    ais_weights_size = tf.cast(tf.size(input=ais_weights), ais_weights.dtype)
+    ais_weights_size = tf.cast(tf.size(ais_weights), ais_weights.dtype)
     log_estimated_normalizer = (
-        tf.reduce_logsumexp(input_tensor=ais_weights) -
+        tf.reduce_logsumexp(ais_weights) -
         tf.math.log(ais_weights_size))
 
-    ratio_estimate_true = tf.exp(ais_weights - log_true_normalizer)
+    ratio_estimate_true = tf.math.exp(ais_weights - log_true_normalizer)
     standard_error = tf.sqrt(
-        _compute_sample_variance(ratio_estimate_true)
-        / ais_weights_size)
+        tf.math.reduce_variance(ratio_estimate_true) / ais_weights_size)
 
     [
         ratio_estimate_true_,
@@ -139,7 +145,7 @@ class SampleAnnealedImportanceTest(tf.test.TestCase):
         event_size,
     ])
 
-    tf.compat.v1.logging.vlog(
+    tf1.logging.vlog(
         1, '        log_true_normalizer: {}\n'
         '   log_estimated_normalizer: {}\n'
         '           ais_weights_size: {}\n'
@@ -148,12 +154,15 @@ class SampleAnnealedImportanceTest(tf.test.TestCase):
             event_size_))
     self.assertNear(ratio_estimate_true_.mean(), 1., 4. * standard_error_)
 
-  def _ais_gets_correct_log_normalizer_wrapper(self, independent_chain_ndims):
+  def _ais_gets_correct_log_normalizer_wrapper(self, independent_chain_ndims,
+                                               use_transformed_kernel=False):
     """Tests that AIS yields reasonable estimates of normalizers."""
     initial_draws = np.random.normal(size=[30, 2, 1])
-    x_ph = tf.compat.v1.placeholder_with_default(
+    x_ph = tf1.placeholder_with_default(
         np.float32(initial_draws), shape=initial_draws.shape, name='x_ph')
-    self._ais_gets_correct_log_normalizer(x_ph, independent_chain_ndims)
+    self._ais_gets_correct_log_normalizer(
+        x_ph, independent_chain_ndims,
+        use_transformed_kernel=use_transformed_kernel)
 
   def testAIS1(self):
     self._ais_gets_correct_log_normalizer_wrapper(1)
@@ -164,14 +173,17 @@ class SampleAnnealedImportanceTest(tf.test.TestCase):
   def testAIS3(self):
     self._ais_gets_correct_log_normalizer_wrapper(3)
 
+  def testAISWithTransformedKernel(self):
+    self._ais_gets_correct_log_normalizer_wrapper(
+        1, use_transformed_kernel=True)
+
   def testSampleAIChainSeedReproducibleWorksCorrectly(self):
     independent_chain_ndims = 1
     x = np.random.rand(4, 3, 2)
 
     def proposal_log_prob(x):
       event_dims = tf.range(independent_chain_ndims, tf.rank(x))
-      return -0.5 * tf.reduce_sum(
-          input_tensor=x**2. + np.log(2 * np.pi), axis=event_dims)
+      return -0.5 * tf.reduce_sum(x**2. + np.log(2 * np.pi), axis=event_dims)
 
     def target_log_prob(x):
       event_dims = tf.range(independent_chain_ndims, tf.rank(x))

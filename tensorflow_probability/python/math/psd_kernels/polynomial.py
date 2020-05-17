@@ -76,6 +76,7 @@ class Polynomial(PositiveSemidefiniteKernel):
                exponent=None,
                feature_ndims=1,
                validate_args=False,
+               parameters=None,
                name='Polynomial'):
     """Construct a Polynomial kernel instance.
 
@@ -111,9 +112,11 @@ class Polynomial(PositiveSemidefiniteKernel):
       validate_args: If `True`, parameters are checked for validity despite
         possibly degrading runtime performance.
         Default Value: `False`
+      parameters: For subclasses, a dict of constructor arguments.
       name: Python `str` name prefixed to Ops created by this class.
         Default Value: `'Polynomial'`
     """
+    parameters = dict(locals()) if parameters is None else parameters
     with tf.name_scope(name):
       dtype = util.maybe_get_common_dtype(
           [bias_variance, slope_variance, shift, exponent])
@@ -126,7 +129,11 @@ class Polynomial(PositiveSemidefiniteKernel):
       self._exponent = tensor_util.convert_nonref_to_tensor(
           exponent, name='exponent', dtype=dtype)
       super(Polynomial, self).__init__(
-          feature_ndims, dtype=dtype, name=name, validate_args=validate_args)
+          feature_ndims,
+          dtype=dtype,
+          name=name,
+          validate_args=validate_args,
+          parameters=parameters)
 
   @property
   def bias_variance(self):
@@ -166,6 +173,8 @@ class Polynomial(PositiveSemidefiniteKernel):
           x1 * x2, ndims=self.feature_ndims)
     else:
       shift = tf.convert_to_tensor(self.shift)
+      shift = util.pad_shape_with_ones(
+          shift, example_ndims + self.feature_ndims)
       dot_prod = util.sum_rightmost_ndims_preserving_shape(
           (x1 - shift) * (x2 - shift),
           ndims=self.feature_ndims)
@@ -255,6 +264,7 @@ class Linear(Polynomial):
       name: Python `str` name prefixed to Ops created by this class.
         Default Value: `'Linear'`
     """
+    parameters = dict(locals())
     super(Linear, self).__init__(
         bias_variance=bias_variance,
         slope_variance=slope_variance,
@@ -262,4 +272,5 @@ class Linear(Polynomial):
         exponent=None,
         feature_ndims=feature_ndims,
         validate_args=validate_args,
+        parameters=parameters,
         name=name)

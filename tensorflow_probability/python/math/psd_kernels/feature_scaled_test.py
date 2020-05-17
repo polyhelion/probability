@@ -24,7 +24,8 @@ import numpy as np
 import tensorflow.compat.v2 as tf
 
 import tensorflow_probability as tfp
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
+
+from tensorflow_probability.python.internal import test_util
 
 
 def _numpy_exp_quad(amplitude, length_scale, x, y, feature_ndims):
@@ -42,8 +43,8 @@ def _numpy_exp_quad_matrix(amplitude, length_scale, x, feature_ndims):
       feature_ndims)
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class _FeatureScaledTest(parameterized.TestCase):
+@test_util.test_all_tf_execution_regimes
+class _FeatureScaledTest(test_util.TestCase):
 
   def testBatchShape(self):
     # Batch shape [10, 2]
@@ -110,11 +111,11 @@ class _FeatureScaledTest(parameterized.TestCase):
         self.evaluate(ard_kernel.matrix(z, z)))
 
 
-class FeatureScaledFloat32Test(_FeatureScaledTest, tf.test.TestCase):
+class FeatureScaledFloat32Test(_FeatureScaledTest):
   dtype = np.float32
 
 
-class FeatureScaledFloat64Test(_FeatureScaledTest, tf.test.TestCase):
+class FeatureScaledFloat64Test(_FeatureScaledTest):
   dtype = np.float64
 
 

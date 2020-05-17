@@ -23,14 +23,15 @@ import numpy as np
 
 import tensorflow.compat.v2 as tf
 
-from tensorflow_probability.python import math as tfp_math
 from tensorflow_probability.python.bijectors import bijector
 from tensorflow_probability.python.internal import assert_util
 from tensorflow_probability.python.internal import tensorshape_util
+from tensorflow_probability.python.math.linalg import fill_triangular
+from tensorflow_probability.python.math.linalg import fill_triangular_inverse
 
 
 __all__ = [
-    "FillTriangular",
+    'FillTriangular',
 ]
 
 
@@ -66,7 +67,7 @@ class FillTriangular(bijector.Bijector):
   def __init__(self,
                upper=False,
                validate_args=False,
-               name="fill_triangular"):
+               name='fill_triangular'):
     """Instantiates the `FillTriangular` bijector.
 
     Args:
@@ -76,19 +77,22 @@ class FillTriangular(bijector.Bijector):
         checked for correctness.
       name: Python `str` name given to ops managed by this object.
     """
-    self._upper = upper
-    super(FillTriangular, self).__init__(
-        forward_min_event_ndims=1,
-        inverse_min_event_ndims=2,
-        is_constant_jacobian=True,
-        validate_args=validate_args,
-        name=name)
+    parameters = dict(locals())
+    with tf.name_scope(name) as name:
+      self._upper = upper
+      super(FillTriangular, self).__init__(
+          forward_min_event_ndims=1,
+          inverse_min_event_ndims=2,
+          is_constant_jacobian=True,
+          validate_args=validate_args,
+          parameters=parameters,
+          name=name)
 
   def _forward(self, x):
-    return tfp_math.fill_triangular(x, upper=self._upper)
+    return fill_triangular(x, upper=self._upper)
 
   def _inverse(self, y):
-    return tfp_math.fill_triangular_inverse(y, upper=self._upper)
+    return fill_triangular_inverse(y, upper=self._upper)
 
   def _forward_log_det_jacobian(self, x):
     return tf.zeros([], dtype=x.dtype)
@@ -112,9 +116,9 @@ class FillTriangular(bijector.Bijector):
     if n1 is None or n2 is None:
       m = None
     elif n1 != n2:
-      raise ValueError("Matrix must be square. (saw [{}, {}])".format(n1, n2))
+      raise ValueError('Matrix must be square. (saw [{}, {}])'.format(n1, n2))
     else:
-      m = n1 * (n1 + 1) / 2
+      m = n1 * (n1 + 1) // 2
     return tensorshape_util.concatenate(batch_shape, [m])
 
   def _forward_event_shape_tensor(self, input_shape_tensor):
@@ -126,7 +130,7 @@ class FillTriangular(bijector.Bijector):
     batch_shape, n = output_shape_tensor[:-2], output_shape_tensor[-1]
     if self.validate_args:
       is_square_matrix = assert_util.assert_equal(
-          n, output_shape_tensor[-2], message="Matrix must be square.")
+          n, output_shape_tensor[-2], message='Matrix must be square.')
       with tf.control_dependencies([is_square_matrix]):
         n = tf.identity(n)
     d = tf.cast(n * (n + 1) / 2, output_shape_tensor.dtype)
@@ -138,17 +142,18 @@ def vector_size_to_square_matrix_size(d, validate_args, name=None):
   if isinstance(d, (float, int, np.generic, np.ndarray)):
     n = (-1 + np.sqrt(1 + 8 * d)) / 2.
     if float(int(n)) != n:
-      raise ValueError("Vector length is not a triangular number.")
+      raise ValueError('Vector length {} is not a triangular number.'.format(d))
     return int(n)
   else:
-    with tf.name_scope(name or "vector_size_to_square_matrix_size") as name:
+    with tf.name_scope(name or 'vector_size_to_square_matrix_size') as name:
       n = (-1. + tf.sqrt(1 + 8. * tf.cast(d, dtype=tf.float32))) / 2.
       if validate_args:
         with tf.control_dependencies([
-            assert_util.assert_equal(
-                tf.cast(tf.cast(n, dtype=tf.int32), dtype=tf.float32),
-                n,
-                message="Vector length is not a triangular number")
+            tf.debugging.Assert(
+                tf.math.equal(
+                    tf.cast(tf.cast(n, dtype=tf.int32), dtype=tf.float32), n),
+                data=['Vector length is not a triangular number: ', d]
+            )
         ]):
           n = tf.identity(n)
       return tf.cast(n, d.dtype)

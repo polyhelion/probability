@@ -22,7 +22,16 @@ import importlib
 import types
 
 import numpy as np
-import tensorflow as tf
+
+try:
+  from tensorflow.python.ops import array_ops  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top,unused-import
+  from tensorflow.python.ops import random_ops  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top,unused-import
+  import tensorflow.compat.v1 as tf1  # pylint: disable=g-import-not-at-top,unused-import
+  import tensorflow.compat.v2 as tf  # pylint: disable=g-import-not-at-top
+  import wrapt  # pylint: disable=g-import-not-at-top
+  can_copy_docstring = True
+except ImportError:
+  can_copy_docstring = False
 
 
 __all__ = [
@@ -33,19 +42,27 @@ __all__ = [
 ]
 
 
-# TODO(jvdillon): Get decoration working. Eg,
-# # Dependency imports
-# import decorator
+def _find_method_from_name(scope, name):
+  method = name.split('.', 1)
+  if isinstance(scope, dict):
+    child = scope[method[0]]
+  else:
+    child = getattr(scope, method[0])
+  if len(method) == 1:
+    return child
+  return _find_method_from_name(child, method[1])
 
 
-def copy_docstring(original_fn, new_fn):  # pylint: disable=unused-argument
-  return new_fn
-  # TODO(jvdillon): Get decoration working. Eg,
-  # @decorator.decorator
-  # def wrap(wrapped_fn, *args, **kwargs):
-  #   del wrapped_fn
-  #   return new_fn(*args, **kwargs)
-  # return wrap(original_fn)
+def copy_docstring(tf_method_name, new_fn):  # pylint: disable=unused-argument
+  """Wraps new_fn with the doc of original_fn if TensorFlow can be imported."""
+  if not can_copy_docstring:
+    return new_fn
+  original_fn = _find_method_from_name(globals(), tf_method_name)
+  @wrapt.decorator
+  def wrap(wrapped, instance, args, kwargs):
+    del instance, wrapped
+    return new_fn(*args, **kwargs)
+  return wrap(original_fn)  # pylint: disable=no-value-for-parameter
 
 
 def numpy_dtype(dtype):
@@ -68,7 +85,7 @@ def common_dtype(args_list, dtype_hint=None):
     if dtype is None:
       dtype = dt
     elif dtype != dt:
-      raise TypeError('Found incompatible dtypes, {} and {}.'.format(dtype, dt))
+      raise TypeError('Found incompatible dtypes, {} and {}'.format(dtype, dt))
   if dtype is None and dtype_hint is None:
     return None
   return (dtype_hint if dtype is None else dtype).as_numpy_dtype

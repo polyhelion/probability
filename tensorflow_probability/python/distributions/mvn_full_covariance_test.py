@@ -19,24 +19,25 @@ from __future__ import division
 from __future__ import print_function
 
 # Dependency imports
+
 import numpy as np
 from scipy import stats
 import tensorflow.compat.v2 as tf
-import tensorflow_probability as tfp
-
+from tensorflow_probability.python import bijectors as tfb
+from tensorflow_probability.python import distributions as tfd
 from tensorflow_probability.python.internal import tensorshape_util
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import
+from tensorflow_probability.python.internal import test_util
 
-tfd = tfp.distributions
+
 rng = np.random.RandomState(42)
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class MultivariateNormalFullCovarianceTest(tf.test.TestCase):
+@test_util.test_all_tf_execution_regimes
+class MultivariateNormalFullCovarianceTest(test_util.TestCase):
 
   def _random_pd_matrix(self, *shape):
     mat = rng.rand(*shape)
-    chol = tfd.matrix_diag_transform(mat, transform=tf.math.softplus)
+    chol = tfb.TransformDiagonal(tfb.Softplus())(mat)
     chol = tf.linalg.band_part(chol, -1, 0)
     return self.evaluate(tf.matmul(chol, chol, adjoint_b=True))
 
@@ -50,7 +51,8 @@ class MultivariateNormalFullCovarianceTest(tf.test.TestCase):
   def testNamePropertyIsSetByInitArg(self):
     mu = [1., 2.]
     sigma = [[1., 0.], [0., 1.]]
-    mvn = tfd.MultivariateNormalFullCovariance(mu, sigma, name="Billy")
+    mvn = tfd.MultivariateNormalFullCovariance(
+        mu, sigma, name="Billy", validate_args=True)
     self.assertStartsWith(mvn.name, "Billy")
 
   def testDoesNotRaiseIfInitializedWithSymmetricMatrix(self):

@@ -19,19 +19,17 @@ from __future__ import division
 from __future__ import print_function
 
 # Dependency imports
-import numpy as np
 
+import numpy as np
 import tensorflow.compat.v1 as tf1
 import tensorflow.compat.v2 as tf
-import tensorflow_probability as tfp
-
-from tensorflow_probability.python.internal import test_util as tfp_test_util
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import
-
-tfd = tfp.distributions
+from tensorflow_probability.python import distributions as tfd
+from tensorflow_probability.python.bijectors import bijector_test_util
+from tensorflow_probability.python.internal import test_util
+from tensorflow_probability.python.util.deferred_tensor import DeferredTensor
 
 
-@test_util.run_all_in_graph_and_eager_modes
+@test_util.test_all_tf_execution_regimes
 class _BatchReshapeTest(object):
 
   def make_wishart(self, dims, new_batch_shape, old_batch_shape):
@@ -49,7 +47,10 @@ class _BatchReshapeTest(object):
                        old_batch_shape + [dims, dims])
     scale_ph = tf1.placeholder_with_default(
         scale, shape=scale.shape if self.is_static_shape else None)
-    wishart = tfd.Wishart(df=5, scale=scale_ph)
+    wishart = tfd.WishartTriL(
+        df=5,
+        scale_tril=DeferredTensor(scale_ph, tf.linalg.cholesky),
+        validate_args=True)
     reshape_wishart = tfd.BatchReshape(
         distribution=wishart,
         batch_shape=new_batch_shape_ph,
@@ -64,7 +65,7 @@ class _BatchReshapeTest(object):
       return
 
     dims = 2
-    seed = tfp_test_util.test_seed()
+    seed = test_util.test_seed()
     new_batch_shape = [4]
     old_batch_shape = [2, 2]
     wishart, reshape_wishart = self.make_wishart(
@@ -188,7 +189,7 @@ class _BatchReshapeTest(object):
         np.prod(old_batch_shape)).reshape(old_batch_shape))
     scale_ph = tf1.placeholder_with_default(
         scale, shape=scale.shape if self.is_static_shape else None)
-    normal = tfd.Normal(loc=self.dtype(0), scale=scale_ph)
+    normal = tfd.Normal(loc=self.dtype(0), scale=scale_ph, validate_args=True)
     reshape_normal = tfd.BatchReshape(
         distribution=normal, batch_shape=new_batch_shape_ph, validate_args=True)
     return normal, reshape_normal
@@ -199,7 +200,7 @@ class _BatchReshapeTest(object):
       # document that the test is not intended to run in eager mode.
       return
 
-    seed = tfp_test_util.test_seed()
+    seed = test_util.test_seed()
 
     new_batch_shape = [2, 2]
     old_batch_shape = [4]
@@ -320,7 +321,7 @@ class _BatchReshapeTest(object):
     scale = np.ones(old_batch_shape + [dims], self.dtype)
     scale_ph = tf1.placeholder_with_default(
         scale, shape=scale.shape if self.is_static_shape else None)
-    mvn = tfd.MultivariateNormalDiag(scale_diag=scale_ph)
+    mvn = tfd.MultivariateNormalDiag(scale_diag=scale_ph, validate_args=True)
     reshape_mvn = tfd.BatchReshape(
         distribution=mvn, batch_shape=new_batch_shape_ph, validate_args=True)
     return mvn, reshape_mvn
@@ -332,7 +333,7 @@ class _BatchReshapeTest(object):
       return
 
     dims = 3
-    seed = tfp_test_util.test_seed()
+    seed = test_util.test_seed()
     new_batch_shape = [2, 1]
     old_batch_shape = [2]
     mvn, reshape_mvn = self.make_mvn(
@@ -470,7 +471,7 @@ class _BatchReshapeTest(object):
     scale = np.ones(old_batch_shape + [dims], self.dtype)
     scale_ph = tf1.placeholder_with_default(
         scale, shape=scale.shape if self.is_static_shape else None)
-    mvn = tfd.MultivariateNormalDiag(scale_diag=scale_ph)
+    mvn = tfd.MultivariateNormalDiag(scale_diag=scale_ph, validate_args=True)
 
     if self.is_static_shape or tf.executing_eagerly():
       with self.assertRaisesRegexp(
@@ -487,7 +488,7 @@ class _BatchReshapeTest(object):
             tfd.BatchReshape(
                 distribution=mvn,
                 batch_shape=new_batch_shape_ph,
-                validate_args=True).sample())
+                validate_args=True).sample(seed=test_util.test_seed()))
 
   def test_non_positive_shape(self):
     dims = 2
@@ -506,7 +507,7 @@ class _BatchReshapeTest(object):
     scale = np.ones(old_batch_shape + [dims], self.dtype)
     scale_ph = tf1.placeholder_with_default(
         scale, shape=scale.shape if self.is_static_shape else None)
-    mvn = tfd.MultivariateNormalDiag(scale_diag=scale_ph)
+    mvn = tfd.MultivariateNormalDiag(scale_diag=scale_ph, validate_args=True)
 
     if self.is_static_shape or tf.executing_eagerly():
       with self.assertRaisesRegexp(ValueError, r'.*must be >=(-1| 0).*'):
@@ -521,7 +522,7 @@ class _BatchReshapeTest(object):
             tfd.BatchReshape(
                 distribution=mvn,
                 batch_shape=new_batch_shape_ph,
-                validate_args=True).sample())
+                validate_args=True).sample(seed=test_util.test_seed()))
 
   def test_non_vector_shape(self):
     if tf.executing_eagerly():
@@ -540,7 +541,7 @@ class _BatchReshapeTest(object):
     scale = np.ones(old_batch_shape + [dims], self.dtype)
     scale_ph = tf1.placeholder_with_default(
         scale, shape=scale.shape if self.is_static_shape else None)
-    mvn = tfd.MultivariateNormalDiag(scale_diag=scale_ph)
+    mvn = tfd.MultivariateNormalDiag(scale_diag=scale_ph, validate_args=True)
 
     if self.is_static_shape:
       with self.assertRaisesRegexp(ValueError, r'.*must be a vector.*'):
@@ -555,7 +556,7 @@ class _BatchReshapeTest(object):
             tfd.BatchReshape(
                 distribution=mvn,
                 batch_shape=new_batch_shape_ph,
-                validate_args=True).sample())
+                validate_args=True).sample(seed=test_util.test_seed()))
 
   def test_broadcasting_explicitly_unsupported(self):
     old_batch_shape = [4]
@@ -564,7 +565,7 @@ class _BatchReshapeTest(object):
 
     rate = tf1.placeholder_with_default(
         rate_, shape=old_batch_shape if self.is_static_shape else None)
-    poisson_4 = tfd.Poisson(rate)
+    poisson_4 = tfd.Poisson(rate, validate_args=True)
     new_batch_shape_ph = (
         tf.constant(np.int32(new_batch_shape)) if self.is_static_shape else
         tf1.placeholder_with_default(np.int32(new_batch_shape), shape=None))
@@ -589,16 +590,76 @@ class _BatchReshapeTest(object):
     with self.assertRaisesOpError('unexpected batch and event shape'):
       self.evaluate(poisson_141_reshaped.log_prob(x_114))
 
+  def test_at_most_one_implicit_dimension(self):
+    batch_shape = tf.Variable([-1, -1])
+    self.evaluate(batch_shape.initializer)
+    with self.assertRaisesOpError('At most one dimension can be unknown'):
+      d = tfd.BatchReshape(tfd.Normal(0, 1), batch_shape, validate_args=True)
+      self.evaluate(d.sample(seed=test_util.test_seed()))
 
-@test_util.run_all_in_graph_and_eager_modes
-class BatchReshapeStaticTest(_BatchReshapeTest, tf.test.TestCase):
+  def test_mutated_at_most_one_implicit_dimension(self):
+    batch_shape = tf.Variable([1, 1])
+    self.evaluate(batch_shape.initializer)
+    dist = tfd.Normal([[0]], [[1]])
+    d = tfd.BatchReshape(dist, batch_shape, validate_args=True)
+    self.evaluate(d.sample(seed=test_util.test_seed()))
+    with self.assertRaisesOpError('At most one dimension can be unknown'):
+      with tf.control_dependencies([batch_shape.assign([-1, -1])]):
+        self.evaluate(d.sample(seed=test_util.test_seed()))
+
+  def test_default_event_space_bijector_shape(self):
+    dist = tfd.Uniform(low=[1., 2., 3., 6.], high=10., validate_args=True)
+    batch_shape = [2, 2, 1]
+    reshape_dist = tfd.BatchReshape(
+        dist, batch_shape=batch_shape, validate_args=True)
+    x = self.evaluate(
+        dist._experimental_default_event_space_bijector()(
+            10. * tf.ones(dist.batch_shape)))
+    x_reshape = self.evaluate(
+        reshape_dist._experimental_default_event_space_bijector()(
+            10. * tf.ones(reshape_dist.batch_shape)))
+    self.assertAllEqual(tf.reshape(x, batch_shape), x_reshape)
+
+  def test_default_event_space_bijector_scalar_congruency(self):
+    dist = tfd.Triangular(low=2., high=10., peak=7., validate_args=True)
+    reshape_dist = tfd.BatchReshape(dist, batch_shape=(), validate_args=True)
+    eps = 1e-6
+    bijector_test_util.assert_scalar_congruency(
+        reshape_dist._experimental_default_event_space_bijector(),
+        lower_x=2+eps, upper_x=10-eps, eval_func=self.evaluate, rtol=.15)
+
+  def test_default_event_space_bijector_bijective_and_finite(self):
+    batch_shape = [5, 1, 4]
+    batch_size = np.prod(batch_shape)
+    low = tf.Variable(
+        np.linspace(-5., 5., batch_size).astype(self.dtype),
+        shape=(batch_size,) if self.is_static_shape else None)
+    dist = tfd.Uniform(
+        low=low,
+        high=30.,
+        validate_args=True)
+    reshape_dist = tfd.BatchReshape(
+        dist, batch_shape=batch_shape, validate_args=True)
+    x = np.linspace(
+        -10., 10., batch_size).astype(self.dtype).reshape(batch_shape)
+    y = np.linspace(
+        5., 30 - 1e-4, batch_size).astype(self.dtype).reshape(batch_shape)
+
+    self.evaluate(low.initializer)
+    bijector_test_util.assert_bijective_and_finite(
+        reshape_dist._experimental_default_event_space_bijector(),
+        x, y, eval_func=self.evaluate, event_ndims=0, rtol=1e-4)
+
+
+@test_util.test_all_tf_execution_regimes
+class BatchReshapeStaticTest(_BatchReshapeTest, test_util.TestCase):
 
   dtype = np.float32
   is_static_shape = True
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class BatchReshapeDynamicTest(_BatchReshapeTest, tf.test.TestCase):
+@test_util.test_all_tf_execution_regimes
+class BatchReshapeDynamicTest(_BatchReshapeTest, test_util.TestCase):
 
   dtype = np.float64
   is_static_shape = False

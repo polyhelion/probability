@@ -22,9 +22,9 @@ import collections
 import tensorflow.compat.v2 as tf
 
 from tensorflow_probability.python.distributions import joint_distribution as joint_distribution_lib
-from tensorflow_probability.python.distributions import seed_stream
 from tensorflow_probability.python.internal import assert_util
 from tensorflow_probability.python.internal import prefer_static
+from tensorflow_probability.python.util.seed_stream import SeedStream
 from tensorflow.python.util import nest  # pylint: disable=g-direct-tensorflow-import
 
 
@@ -73,6 +73,11 @@ class JointDistributionCoroutine(joint_distribution_lib.JointDistribution):
   each of the distributions generates samples with the specified sample
   size.
 
+  **Name resolution**: The names of `JointDistributionCoroutine` components
+  may be specified by passing `name` arguments to distribution constructors (
+  `tfd.Normal(0., 1., name='x')). Components without an explicit name will be
+  assigned a dummy name.
+
   #### Examples
 
   ```python
@@ -95,7 +100,8 @@ class JointDistributionCoroutine(joint_distribution_lib.JointDistribution):
   joint = tfd.JointDistributionCoroutine(model)
 
   x = joint.sample()
-  # ==> A length-4 list of tfd.Distribution instances
+  # ==> x is A length-4 tuple of Tensors representing a draw/realization from
+  #     each distribution.
   joint.log_prob(x)
   # ==> A scalar `Tensor` representing the total log prob under all four
   #     distributions.
@@ -157,16 +163,19 @@ class JointDistributionCoroutine(joint_distribution_lib.JointDistribution):
     parameters = dict(locals())
     with tf.name_scope(name or 'JointDistributionCoroutine') as name:
       self._sample_dtype = sample_dtype
-      self._model = model
-      self._most_recently_built_distributions = None
+      self._model_coroutine = model
+      self._single_sample_distributions = {}
       super(JointDistributionCoroutine, self).__init__(
           dtype=sample_dtype,
           reparameterization_type=None,  # Ignored; we'll override.
           validate_args=validate_args,
           allow_nan_stats=False,
           parameters=parameters,
-          graph_parents=[],
           name=name)
+
+  @property
+  def model(self):
+    return self._model_coroutine
 
   def _assert_compatible_shape(self, index, sample_shape, samples):
     requested_shape, _ = self._expand_sample_shape_to_vector(
@@ -223,8 +232,8 @@ class JointDistributionCoroutine(joint_distribution_lib.JointDistribution):
     """Executes `model`, creating both samples and distributions."""
     ds = []
     values_out = []
-    seed = seed_stream.SeedStream('JointDistributionCoroutine', seed)
-    gen = self._model()
+    seed = SeedStream(seed, salt='JointDistributionCoroutine')
+    gen = self._model_coroutine()
     index = 0
     d = next(gen)
     if not isinstance(d, self.Root):
@@ -247,7 +256,7 @@ class JointDistributionCoroutine(joint_distribution_lib.JointDistribution):
           with tf.control_dependencies(
               self._assert_compatible_shape(
                   index, sample_shape, next_value)):
-            values_out.append(tf.identity(next_value))
+            values_out.append(tf.nest.map_structure(tf.identity, next_value))
         else:
           values_out.append(next_value)
 

@@ -18,16 +18,14 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import tensorflow as tf
+import tensorflow.compat.v2 as tf
 import tensorflow_probability as tfp
-
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import
-
-tfd = tfp.distributions
+from tensorflow_probability.python import distributions as tfd
+from tensorflow_probability.python.internal import test_util
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class VariableInputLayerTest(tf.test.TestCase):
+@test_util.test_all_tf_execution_regimes
+class VariableInputLayerTest(test_util.TestCase):
 
   def test_sequential_api(self):
     # Create a trainable distribution using the Sequential API.

@@ -18,19 +18,22 @@ from __future__ import print_function
 
 # Dependency imports
 import numpy as np
+import numpy as onp  # pylint: disable=reimported
 from scipy import interpolate as scipy_interpolate
 
 import tensorflow.compat.v2 as tf
 import tensorflow_probability as tfp
 
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
+
+from tensorflow_probability.python.internal import test_util
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class InterpRegular1DGridTest(tf.test.TestCase):
+@test_util.test_all_tf_execution_regimes
+class InterpRegular1DGridTest(test_util.TestCase):
   """Test for tfp.math.interp_regular_1d_grid."""
 
   def setUp(self):
+    super(InterpRegular1DGridTest, self).setUp()
     self.rng = np.random.RandomState(42)
 
   def test_on_1d_array_nan_fill_value(self):
@@ -199,7 +202,7 @@ class InterpRegular1DGridTest(tf.test.TestCase):
 
     # make sure some values are not in [x_ref_min, x_ref_max]
     x = np.linspace(
-        x_ref_min - 0.5, x_ref_max + 0.5, np.prod(x_shape),
+        x_ref_min - 0.5, x_ref_max + 0.5, np.int32(np.prod(x_shape)),
         dtype=dtype).reshape(x_shape)
 
     y = tfp.math.interp_regular_1d_grid(
@@ -291,11 +294,12 @@ class InterpRegular1DGridTest(tf.test.TestCase):
       self.assertAllClose([2., 2., 0., 2., 2.], dy_dx_)
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class BatchInterpRegular1DGridTest(tf.test.TestCase):
+@test_util.test_all_tf_execution_regimes
+class BatchInterpRegular1DGridTest(test_util.TestCase):
   """Test for 1-D usage of tfp.math.interp_regular_1d_grid."""
 
   def setUp(self):
+    super(BatchInterpRegular1DGridTest, self).setUp()
     self.rng = np.random.RandomState(42)
 
   def test_on_1d_array_nan_fill_value(self):
@@ -461,7 +465,8 @@ class BatchInterpRegular1DGridTest(tf.test.TestCase):
     self.assertAllClose(np.log(x), y_[1], rtol=1e-3, atol=1e-3)
 
   def test_scalar_valued_with_1_batch_dim_x_and_x_minmax_have_empty_batch(self):
-    implied_x_ref = tf.linspace(-3., 3.2, 200)
+    implied_x_ref = tf.linspace(np.array(-3., dtype=np.float32),
+                                3.2, 200)
     y_ref = tf.stack(  # Shape [2, 200]
         [tf.exp(implied_x_ref), tf.exp(2 * implied_x_ref)], axis=0)
 
@@ -470,8 +475,8 @@ class BatchInterpRegular1DGridTest(tf.test.TestCase):
     x = np.array([1., 1.12, 2.11], dtype=np.float32)
     y = tfp.math.batch_interp_regular_1d_grid(
         x,
-        x_ref_min=-3.,
-        x_ref_max=3.2,
+        x_ref_min=np.array(-3., dtype=np.float32),
+        x_ref_max=np.array(3.2, dtype=np.float32),
         y_ref=y_ref,
         axis=-1)
     self.assertAllEqual((2, 3), y.shape)
@@ -569,8 +574,8 @@ class BatchInterpRegular1DGridTest(tf.test.TestCase):
       self.assertAllClose([2., 2., 0., 2., 2.], dy_dx_)
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class BatchInterpRegularNDGridTest(tf.test.TestCase):
+@test_util.test_all_tf_execution_regimes
+class BatchInterpRegularNDGridTest(test_util.TestCase):
 
   def test_2d_scalar_valued_no_leading_dims(self):
     y_ref = [[0., 1.], [2., 3.]]
@@ -636,8 +641,8 @@ class BatchInterpRegularNDGridTest(tf.test.TestCase):
                         self.evaluate(y))
 
   def test_1d_scalar_valued_function(self):
-    x_ref_min = [-2.]
-    x_ref_max = [1.3]
+    x_ref_min = np.array([-2.], dtype=np.float32)
+    x_ref_max = np.array([1.3], dtype=np.float32)
     ny = [100]
 
     # Build y_ref.
@@ -651,7 +656,8 @@ class BatchInterpRegularNDGridTest(tf.test.TestCase):
 
     # Shape [10, 1]
     x = tf.random.uniform(
-        shape=(10, 1), minval=x_ref_min[0], maxval=x_ref_max[0], seed=0)
+        shape=(10, 1), minval=x_ref_min[0], maxval=x_ref_max[0],
+        seed=test_util.test_seed())
 
     x = self.evaluate(x)
 
@@ -663,8 +669,11 @@ class BatchInterpRegularNDGridTest(tf.test.TestCase):
         self.evaluate(expected_y), self.evaluate(actual_y), atol=0.02)
 
   def test_1d_scalar_valued_function_with_batch_dims(self):
-    x_ref_min = [[-2.], [-3.]]  # Shape [2, 1], [2] is the batch shape.
-    x_ref_max = [1.3]  # Shape [1] -- will have to be broadcast!
+    # Shape [2, 1], [2]is the batch shape.
+    x_ref_min = np.array([[-2.], [-3.]], dtype=np.float32)
+
+    # Shape [1] -- will have to be broadcast!
+    x_ref_max = np.array([1.3], dtype=np.float32)
     ny = [100]
 
     # Build y_ref
@@ -683,7 +692,8 @@ class BatchInterpRegularNDGridTest(tf.test.TestCase):
     # x's batch shape is [3, 2], which is the largest of the inputs, so it will
     # determine the output batch shape.
     x = tf.random.uniform(
-        shape=(3, 2, 10, 1), minval=x_ref_min[0], maxval=x_ref_max[0], seed=0)
+        shape=(3, 2, 10, 1), minval=x_ref_min[0], maxval=x_ref_max[0],
+        seed=test_util.test_seed())
 
     x = self.evaluate(x)
 
@@ -695,8 +705,8 @@ class BatchInterpRegularNDGridTest(tf.test.TestCase):
         self.evaluate(expected_y), self.evaluate(actual_y), atol=0.02)
 
   def test_2d_scalar_valued_function(self):
-    x_ref_min = [0., 1.]
-    x_ref_max = [1.3, 2.]
+    x_ref_min = np.array([0., 1.], dtype=np.float32)
+    x_ref_max = np.array([1.3, 2.], dtype=np.float32)
     ny = [100, 110]
 
     # Build y_ref.
@@ -712,11 +722,12 @@ class BatchInterpRegularNDGridTest(tf.test.TestCase):
     y_ref = self.evaluate(func(x0s, x1s))
 
     # Shape [10, 2]
+    seed = test_util.test_seed_stream()
     x = tf.stack([
         tf.random.uniform(
-            shape=(10,), minval=x_ref_min[0], maxval=x_ref_max[0], seed=0),
+            shape=(10,), minval=x_ref_min[0], maxval=x_ref_max[0], seed=seed()),
         tf.random.uniform(
-            shape=(10,), minval=x_ref_min[1], maxval=x_ref_max[1], seed=1),
+            shape=(10,), minval=x_ref_min[1], maxval=x_ref_max[1], seed=seed()),
     ],
                  axis=-1)
 
@@ -730,8 +741,8 @@ class BatchInterpRegularNDGridTest(tf.test.TestCase):
         self.evaluate(expected_y), self.evaluate(actual_y), atol=0.02)
 
   def test_2d_vector_valued_function(self):
-    x_ref_min = [1., 0.]
-    x_ref_max = [2.3, 1.]
+    x_ref_min = np.array([1., 0.], dtype=np.float32)
+    x_ref_max = np.array([2.3, 1.], dtype=np.float32)
     ny = [200, 210]
 
     # Build y_ref.
@@ -748,11 +759,12 @@ class BatchInterpRegularNDGridTest(tf.test.TestCase):
     y_ref = self.evaluate(func(x0s, x1s))
 
     # Shape [10, 2]
+    seed = test_util.test_seed_stream()
     x = tf.stack([
         tf.random.uniform(
-            shape=(10,), minval=x_ref_min[0], maxval=x_ref_max[0], seed=0),
+            shape=(10,), minval=x_ref_min[0], maxval=x_ref_max[0], seed=seed()),
         tf.random.uniform(
-            shape=(10,), minval=x_ref_min[1], maxval=x_ref_max[1], seed=1),
+            shape=(10,), minval=x_ref_min[1], maxval=x_ref_max[1], seed=seed()),
     ],
                  axis=-1)
 
@@ -766,8 +778,11 @@ class BatchInterpRegularNDGridTest(tf.test.TestCase):
         self.evaluate(expected_y), self.evaluate(actual_y), atol=0.02)
 
   def test_2d_vector_valued_function_with_batch_dims(self):
-    x_ref_min = [0., 0.]  # No batch dims, will broadcast.
-    x_ref_max = [1., 1.]  # No batch dims, will broadcast.
+    # No batch dims, will broadcast.
+    x_ref_min = np.array([0., 0.], dtype=np.float32)
+
+    # No batch dims, will broadcast.
+    x_ref_max = np.array([1., 1.], dtype=np.float32)
     ny = [200, 210]
 
     # Build y_ref.
@@ -796,7 +811,7 @@ class BatchInterpRegularNDGridTest(tf.test.TestCase):
 
     # Shape [2, 10, 2].  The batch shape is [2], the [10] is the number of
     # interpolants per batch.
-    x = tf.random.uniform(shape=[2, 10, 2], seed=0)
+    x = tf.random.uniform(shape=[2, 10, 2], seed=test_util.test_seed())
 
     x = self.evaluate(x)
 
@@ -808,8 +823,8 @@ class BatchInterpRegularNDGridTest(tf.test.TestCase):
         self.evaluate(expected_y), self.evaluate(actual_y), atol=0.02)
 
   def test_3d_vector_valued_function_and_fill_value(self):
-    x_ref_min = [1.0, 0.0, -1.2]
-    x_ref_max = [2.3, 3.0, 1.0]
+    x_ref_min = np.array([1.0, 0.0, -1.2], dtype=np.float32)
+    x_ref_max = np.array([2.3, 3.0, 1.0], dtype=np.float32)
     ny = [200, 210, 211]
 
     # Build y_ref.
@@ -826,21 +841,22 @@ class BatchInterpRegularNDGridTest(tf.test.TestCase):
     # Shape ny + [2]
     y_ref = self.evaluate(func(x0s, x1s, x2s))
 
+    seed = test_util.test_seed_stream()
     # Shape [10, 3]
     x = tf.stack([
         tf.random.uniform(
-            shape=(10,), minval=x_ref_min[0], maxval=x_ref_max[0], seed=0),
+            shape=(10,), minval=x_ref_min[0], maxval=x_ref_max[0], seed=seed()),
         tf.random.uniform(
-            shape=(10,), minval=x_ref_min[1], maxval=x_ref_max[1], seed=1),
+            shape=(10,), minval=x_ref_min[1], maxval=x_ref_max[1], seed=seed()),
         tf.random.uniform(
-            shape=(10,), minval=x_ref_min[2], maxval=x_ref_max[2], seed=2),
+            shape=(10,), minval=x_ref_min[2], maxval=x_ref_max[2], seed=seed()),
     ],
                  axis=-1)
 
-    x = self.evaluate(x)
+    x = onp.array(self.evaluate(x))
     x[0, 0] = -3  # Outside the grid, so `fill_value` will be imputed.
 
-    expected_y = self.evaluate(func(x[:, 0], x[:, 1], x[:, 2]))
+    expected_y = onp.array(self.evaluate(func(x[:, 0], x[:, 1], x[:, 2])))
     fill_value = -42
     expected_y[0, :] = fill_value
 
@@ -859,6 +875,10 @@ class BatchInterpRegularNDGridTest(tf.test.TestCase):
       tfp.math.batch_interp_regular_nd_grid(
           x=[[1.]], x_ref_min=[0.], x_ref_max=[1.], y_ref=[0., 1.], axis=3)
 
+  @test_util.numpy_disable_gradient_test
+  @test_util.jax_disable_test_missing_functionality(
+      'Bug in gradient of gather/prod: '
+      'https://github.com/google/jax/issues/1888')
   def test_gradients_nonzero_at_reference_points(self):
     x_ref_min = [0.]
     x_ref_max = [1.]
@@ -901,6 +921,18 @@ class BatchInterpRegularNDGridTest(tf.test.TestCase):
     _, dy_dx_ = self.evaluate(tfp.math.value_and_gradient(func, x))
     self.assertAllEqual([0., 2., 2., 2., 2., 0.], dy_dx_[..., 0])
 
+  def test_float64(self):
+    y_ref = tf.convert_to_tensor([[0., 1.], [2., 3.]], dtype=tf.float64)
+    y = tfp.math.batch_interp_regular_nd_grid(
+        # Interpolate at one single point.
+        x=tf.convert_to_tensor([[0., 0.]], dtype=tf.float64),
+        x_ref_min=tf.convert_to_tensor([0., 0.], dtype=tf.float64),
+        x_ref_max=tf.convert_to_tensor([1., 1.], dtype=tf.float64),
+        y_ref=y_ref,
+        axis=-2)
+    # Test x at the upper left grid point.
+    self.assertEqual(y.dtype, tf.float64)
+    self.assertAllClose([0.0], self.evaluate(y))
 
 if __name__ == '__main__':
   tf.test.main()

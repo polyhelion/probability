@@ -18,12 +18,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import itertools
-
 import tensorflow.compat.v2 as tf
 from tensorflow_probability.python.bijectors import bijector
 from tensorflow_probability.python.internal import distribution_util
 from tensorflow_probability.python.internal import dtype_util
+from tensorflow_probability.python.internal import prefer_static
 from tensorflow_probability.python.internal import tensorshape_util
 
 
@@ -144,7 +143,11 @@ class Chain(bijector.Bijector):
 
   """
 
-  def __init__(self, bijectors=None, validate_args=False, name=None):
+  def __init__(self,
+               bijectors=None,
+               validate_args=False,
+               parameters=None,
+               name=None):
     """Instantiates `Chain` bijector.
 
     Args:
@@ -152,12 +155,15 @@ class Chain(bijector.Bijector):
         bijector equivalent to the `Identity` bijector.
       validate_args: Python `bool` indicating whether arguments should be
         checked for correctness.
+      parameters: Locals dict captured by subclass constructor, to be used for
+        copy/slice re-instantiation operators.
       name: Python `str`, name given to ops managed by this object. Default:
         E.g., `Chain([Exp(), Softplus()]).name == "chain_of_exp_of_softplus"`.
 
     Raises:
       ValueError: if bijectors have different dtypes.
     """
+    parameters = dict(locals()) if parameters is None else parameters
     if name is None:
       name = ("identity" if not bijectors else
               "_of_".join(["chain"] + [b.name for b in bijectors]))
@@ -187,13 +193,12 @@ class Chain(bijector.Bijector):
           bijectors, compute_forward=True)
 
       super(Chain, self).__init__(
-          graph_parents=list(itertools.chain.from_iterable(
-              b.graph_parents for b in bijectors)),
           forward_min_event_ndims=forward_min_event_ndims,
           inverse_min_event_ndims=inverse_min_event_ndims,
           is_constant_jacobian=all(b.is_constant_jacobian for b in bijectors),
           validate_args=validate_args,
           dtype=dtype,
+          parameters=parameters,
           name=name)
 
   @property
@@ -225,6 +230,14 @@ class Chain(bijector.Bijector):
   def _inverse_event_shape_tensor(self, output_shape):
     return self._shape_helper("inverse_event_shape_tensor", output_shape,
                               reverse=False)
+
+  def _is_increasing(self, **kwargs):
+    # desc(desc)=>asc, asc(asc)=>asc, other cases=>desc.
+    is_increasing = True
+    for b in self.bijectors:
+      is_increasing = prefer_static.equal(
+          is_increasing, b._internal_is_increasing(**kwargs.get(b.name, {})))  # pylint: disable=protected-access
+    return is_increasing
 
   def _inverse(self, y, **kwargs):
     for b in self.bijectors:
@@ -268,6 +281,11 @@ class Chain(bijector.Bijector):
       y = b.inverse(y, **kwargs.get(b.name, {}))
     return ildj
 
+  def _inverse_dtype(self, dtype, **kwargs):
+    for b in self.bijectors:
+      dtype = b.inverse_dtype(dtype, **kwargs.get(b.name, {}))
+    return dtype
+
   def _forward(self, x, **kwargs):
     for b in reversed(self.bijectors):
       x = b.forward(x, **kwargs.get(b.name, {}))
@@ -310,3 +328,8 @@ class Chain(bijector.Bijector):
       x = b.forward(x, **kwargs.get(b.name, {}))
 
     return fldj
+
+  def _forward_dtype(self, dtype, **kwargs):
+    for b in reversed(self.bijectors):
+      dtype = b.forward_dtype(dtype, **kwargs.get(b.name, {}))
+    return dtype

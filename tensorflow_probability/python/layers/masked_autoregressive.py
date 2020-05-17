@@ -19,12 +19,10 @@ from __future__ import division
 from __future__ import print_function
 
 # Dependency imports
-import tensorflow as tf
+import tensorflow.compat.v2 as tf
 
-# By importing `distributions` as `tfd`, docstrings will show
-# `tfd.Distribution`. We import `bijectors` the same way, for consistency.
-from tensorflow_probability.python import bijectors as tfb
-from tensorflow_probability.python import distributions as tfd
+from tensorflow_probability.python.bijectors import masked_autoregressive as masked_autoregressive_lib
+from tensorflow_probability.python.distributions import transformed_distribution as transformed_distribution_lib
 
 from tensorflow_probability.python.layers.distribution_layer import DistributionLambda
 
@@ -35,14 +33,14 @@ __all__ = [
 
 
 class AutoregressiveTransform(DistributionLambda):
-  """An autoregressive normalizing flow layer, given an `AutoregressiveLayer`.
+  """An autoregressive normalizing flow layer.
 
   Following [Papamakarios et al. (2017)][1], given an autoregressive model p(x)
   with conditional distributions in the [location-scale family](
   https://en.wikipedia.org/wiki/Location-scale_family), we can construct a
   normalizing flow for p(x).
 
-  Specifically, suppose `made` is a `tfb.AutoregressiveLayer` -- a layer
+  Specifically, suppose `made` is a `tfb.AutoregressiveNetwork` -- a layer
   implementing a Masked Autoencoder for Distribution Estimation (MADE) -- that
   computes location and log-scale parameters `made(x)[i]` for each input `x[i]`.
   Then we can represent the autoregressive model `p(x)` as `x = f(u)` where `u`
@@ -54,12 +52,12 @@ class AutoregressiveTransform(DistributionLambda):
     return (x - shift) * tf.math.exp(-log_scale)
   ```
 
-  Given a `tfb.AutoregressiveLayer` layer `made`, an `AutoregressiveTransform`
+  Given a `tfb.AutoregressiveNetwork` layer `made`, an `AutoregressiveTransform`
   layer transforms an input `tfd.Distribution` p(u) to an output
   `tfp.Distribution` p(x) where `x = f(u)`.
 
   For additional details, see the `tfb.MaskedAutoregressiveFlow` bijector and
-  the  `tfb.AutoregressiveLayer`.
+  the  `tfb.AutoregressiveNetwork`.
 
   #### Example
 
@@ -89,12 +87,12 @@ class AutoregressiveTransform(DistributionLambda):
       # matching batch_shape and event_shape of [2].
       tfpl.DistributionLambda(lambda t: tfd.MultivariateNormalDiag(
           # pylint: disable=g-long-lambda
-          loc=tf.zeros(tf.concat([tf.shape(input=t)[:-1], [2]], axis=0)),
+          loc=tf.zeros(tf.concat([tf.shape(t)[:-1], [2]], axis=0)),
           scale_diag=[1., 1.])),
 
       # Transform the standard normal distribution with event_shape of [2] to
       # the target distribution with event_shape of [2].
-      tfpl.AutoregressiveTransform(tfb.AutoregressiveLayer(
+      tfpl.AutoregressiveTransform(tfb.AutoregressiveNetwork(
           params=2, hidden_units=[10], activation='relu')),
   ])
 
@@ -146,7 +144,7 @@ class AutoregressiveTransform(DistributionLambda):
     super(AutoregressiveTransform, self).build(input_shape)
 
   def _transform(self, distribution):
-    return tfd.TransformedDistribution(
-        bijector=tfb.MaskedAutoregressiveFlow(
+    return transformed_distribution_lib.TransformedDistribution(
+        bijector=masked_autoregressive_lib.MaskedAutoregressiveFlow(
             lambda x: tf.unstack(self._made(x), axis=-1)),
         distribution=distribution)

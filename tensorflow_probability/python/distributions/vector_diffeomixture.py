@@ -27,13 +27,14 @@ from tensorflow_probability.python.bijectors import softmax_centered as softmax_
 from tensorflow_probability.python.distributions import categorical
 from tensorflow_probability.python.distributions import distribution as distribution_lib
 from tensorflow_probability.python.distributions import normal
-from tensorflow_probability.python.distributions import seed_stream
 from tensorflow_probability.python.internal import assert_util
 from tensorflow_probability.python.internal import distribution_util
 from tensorflow_probability.python.internal import dtype_util
 from tensorflow_probability.python.internal import reparameterization
 from tensorflow_probability.python.internal import tensorshape_util
+from tensorflow_probability.python.util.seed_stream import SeedStream
 from tensorflow.python.ops.linalg import linear_operator_addition as linop_add_lib  # pylint: disable=g-direct-tensorflow-import
+from tensorflow.python.util import deprecation  # pylint: disable=g-direct-tensorflow-import
 
 
 __all__ = [
@@ -266,7 +267,7 @@ class VectorDiffeomixture(distribution_lib.Distribution):
   sources of stochasticity. That is, as long as the parameters are used *after*
   the underlying source of stochasticity, the computed gradient is accurate.
 
-  Reparametrization means that we can use gradient-descent (via backprop) to
+  Reparameterization means that we can use gradient-descent (via backprop) to
   optimize Monte-Carlo objectives. Such objectives are a finite-sample
   approximation of an expectation and arise throughout scientific computing.
 
@@ -312,6 +313,11 @@ class VectorDiffeomixture(distribution_lib.Distribution):
        https://arxiv.org/abs/1801.03080
   """
 
+  @deprecation.deprecated(
+      "2020-03-01",
+      "`VectorDiffeomixture` is deprecated. If you prefer we not remove this "
+      "functionality, please contact tfprobability@tensorflow.org, or raise "
+      "an issue on https://github.com/tensorflow/probability/issues.")
   def __init__(self,
                mix_loc,
                temperature,
@@ -490,10 +496,6 @@ class VectorDiffeomixture(distribution_lib.Distribution):
           validate_args=validate_args,
           allow_nan_stats=allow_nan_stats,
           parameters=parameters,
-          graph_parents=(
-              distribution._graph_parents  # pylint: disable=protected-access
-              + [loc_ for loc_ in loc if loc_ is not None] +
-              [p for scale_ in scale for p in scale_.graph_parents]),  # pylint: disable=g-complex-comprehension
           name=name)
 
   @property
@@ -534,7 +536,7 @@ class VectorDiffeomixture(distribution_lib.Distribution):
     return self._event_shape_
 
   def _sample_n(self, n, seed=None):
-    stream = seed_stream.SeedStream(seed, salt="VectorDiffeomixture")
+    stream = SeedStream(seed, salt="VectorDiffeomixture")
     x = self.distribution.sample(
         sample_shape=concat_vectors(
             [n],
@@ -572,7 +574,7 @@ class VectorDiffeomixture(distribution_lib.Distribution):
 
     # Stride `components * quadrature_size` for `batch_size` number of times.
     stride = tensorshape_util.num_elements(
-        tensorshape_util.with_rank_at_least(self.grid.shape, 2)[-2:])
+        tensorshape_util.with_rank(self.grid.shape[-2:], rank=2))
     if stride is None:
       stride = tf.reduce_prod(tf.shape(self.grid)[-2:])
     offset = tf.range(
@@ -769,6 +771,10 @@ class VectorDiffeomixture(distribution_lib.Distribution):
         ],
         axis=0)
     return tf.reshape(p, shape=expand_shape)
+
+  # TODO(b/145620027) Finalize choice of bijector, if any.
+  # def _default_event_space_bijector(self):
+  #   return
 
 
 def maybe_check_quadrature_param(param, name, validate_args):

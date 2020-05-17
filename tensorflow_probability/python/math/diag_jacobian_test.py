@@ -19,19 +19,16 @@ from __future__ import division
 from __future__ import print_function
 
 # Dependency imports
-import numpy as np
 
+import numpy as np
 import tensorflow.compat.v2 as tf
 import tensorflow_probability as tfp
-
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import
-
-
-tfd = tfp.distributions
+from tensorflow_probability.python import distributions as tfd
+from tensorflow_probability.python.internal import test_util
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class JacobianTest(tf.test.TestCase):
+@test_util.test_all_tf_execution_regimes
+class JacobianTest(test_util.TestCase):
 
   def testJacobianDiagonal3DListInput(self):
     """Tests that the diagonal of the Jacobian matrix computes correctly."""
@@ -92,7 +89,7 @@ class JacobianTest(tf.test.TestCase):
 
     # Assume that the state is passed as a 2x2 matrix of sample_shape = [5, 3]:
     sample_shape = [5, 3]
-    def target_fn(*x):
+    def target_fn(x):
       z = tf.reshape(x, sample_shape + [4])
       return target.log_prob(z)
 

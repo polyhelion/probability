@@ -16,6 +16,11 @@
 #   Internal helper libraries for distributions.
 
 # [internal] load python3.bzl
+load(
+    "//tensorflow_probability/python:build_defs.bzl",
+    "multi_substrate_py_test",
+    "multi_substrate_py_library",
+)
 
 licenses(["notice"])  # Apache 2.0
 
@@ -27,52 +32,33 @@ package(
 
 exports_files(["LICENSE"])
 
-py_library(
+multi_substrate_py_library(
     name = "init",
     srcs = ["__init__.py"],
     srcs_version = "PY2AND3",
 )
 
-py_library(
-    name = "moving_stats",
-    srcs = ["moving_stats.py"],
-    deps = [
-        ":init",
-        # tensorflow dep,
-    ],
-)
-
-py_test(
-    name = "moving_stats_test",
-    size = "medium",
-    srcs = ["moving_stats_test.py"],
-    tags = [
-        "nomsan",  # disable to avoid false positives from scipy.
-    ],
-    deps = [
-        ":moving_stats",
-        # numpy dep,
-        # tensorflow dep,
-    ],
-)
-
-py_library(
+multi_substrate_py_library(
     name = "statistical_testing",
     srcs = ["statistical_testing.py"],
+    srcs_version = "PY2AND3",
     deps = [
         ":init",
         # tensorflow dep,
-        "//tensorflow_probability/python/distributions:seed_stream",
         "//tensorflow_probability/python/internal:distribution_util",
         "//tensorflow_probability/python/internal:dtype_util",
         "//tensorflow_probability/python/internal:tensorshape_util",
+        "//tensorflow_probability/python/util:seed_stream",
     ],
 )
 
-py_test(
+multi_substrate_py_test(
     name = "statistical_testing_test",
     size = "medium",
     srcs = ["statistical_testing_test.py"],
+    jax_size = "medium",
+    jax_tags = ["notap"],
+    numpy_tags = ["notap"],
     shard_count = 4,
     deps = [
         ":statistical_testing",
@@ -88,6 +74,7 @@ py_library(
     srcs = [
         "correlation_matrix_volumes_lib.py",
     ],
+    srcs_version = "PY2AND3",
     deps = [
         ":init",
         # numpy dep,
@@ -101,7 +88,7 @@ py_library(
 py_binary(
     name = "correlation_matrix_volumes",
     srcs = ["correlation_matrix_volumes.py"],
-    python_version = "PY2",
+    python_version = "PY3",
     deps = [
         ":correlation_matrix_volumes_py",
         ":init",
@@ -112,7 +99,7 @@ py_binary(
 
 py_test(
     name = "correlation_matrix_volumes_test",
-    size = "medium",
+    size = "small",
     srcs = ["correlation_matrix_volumes_test.py"],
     shard_count = 4,
     tags = [
@@ -124,10 +111,11 @@ py_test(
         ":statistical_testing",
         # numpy dep,
         # tensorflow dep,
+        "//tensorflow_probability/python/internal:test_util",
     ],
 )
 
-py_library(
+multi_substrate_py_library(
     name = "slicing",
     srcs = ["slicing.py"],
     deps = [
@@ -137,12 +125,22 @@ py_library(
     ],
 )
 
-py_test(
+multi_substrate_py_test(
     name = "slicing_test",
+    size = "small",
     srcs = ["slicing_test.py"],
     deps = [
         ":slicing",
         # tensorflow dep,
         "//tensorflow_probability/python/internal:tensorshape_util",
+        "//tensorflow_probability/python/internal:test_util",
     ],
+)
+
+exports_files(
+    [
+        "slicing.py",
+        "slicing_test.py",
+    ],
+    visibility = ["//tensorflow_probability:__subpackages__"],
 )

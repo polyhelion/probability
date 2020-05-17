@@ -18,7 +18,7 @@ from __future__ import division
 from __future__ import print_function
 
 # Dependency imports
-import tensorflow as tf
+import tensorflow.compat.v2 as tf
 
 from tensorflow_probability.python import bijectors as tfb
 from tensorflow_probability.python import distributions as tfd
@@ -26,6 +26,7 @@ from tensorflow_probability.python import distributions as tfd
 from tensorflow_probability.python.internal import distribution_util
 from tensorflow_probability.python.sts.structural_time_series import Parameter
 from tensorflow_probability.python.sts.structural_time_series import StructuralTimeSeries
+from tensorflow.python.util import deprecation  # pylint: disable=g-direct-tensorflow-import
 
 tfl = tf.linalg
 
@@ -136,6 +137,12 @@ class LinearRegression(StructuralTimeSeries):
 
   """
 
+  @deprecation.deprecated(
+      '2020-06-01', 'Previously, the batch shape of `weights_prior` was '
+      'overridden to equal the batch shape of the design matrix when '
+      '`weights_prior.event_shape` is scalar. This behavior is deprecated, '
+      'and `weights_prior` must be defined with the desired batch shape (see '
+      'note on batch shapes in the constructor docstring).')
   def __init__(self,
                design_matrix,
                weights_prior=None,
@@ -179,8 +186,7 @@ class LinearRegression(StructuralTimeSeries):
       name: the name of this model component.
         Default value: 'LinearRegression'.
     """
-    with tf.compat.v1.name_scope(
-        name, 'LinearRegression', values=[design_matrix]) as name:
+    with tf.name_scope(name or 'LinearRegression') as name:
 
       if not isinstance(design_matrix, tfl.LinearOperator):
         design_matrix = tfl.LinearOperatorFullMatrix(
@@ -406,9 +412,7 @@ class SparseLinearRegression(StructuralTimeSeries):
       name: the name of this model component.
         Default value: 'SparseLinearRegression'.
     """
-    with tf.compat.v1.name_scope(
-        name, 'SparseLinearRegression',
-        values=[design_matrix, weights_prior_scale]) as name:
+    with tf.name_scope(name or 'SparseLinearRegression') as name:
 
       if not isinstance(design_matrix, tfl.LinearOperator):
         design_matrix = tfl.LinearOperatorFullMatrix(

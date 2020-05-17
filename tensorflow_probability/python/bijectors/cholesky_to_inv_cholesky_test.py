@@ -22,12 +22,11 @@ from __future__ import print_function
 import numpy as np
 import tensorflow.compat.v2 as tf
 from tensorflow_probability.python import bijectors as tfb
+from tensorflow_probability.python.internal import test_util
 
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
 
-
-@test_util.run_all_in_graph_and_eager_modes
-class CholeskyToInvCholeskyTest(tf.test.TestCase):
+@test_util.test_all_tf_execution_regimes
+class CholeskyToInvCholeskyTest(test_util.TestCase):
 
   def testBijector(self):
     bijector = tfb.CholeskyToInvCholesky()
@@ -102,7 +101,7 @@ class CholeskyToInvCholeskyTest(tf.test.TestCase):
 
   def testJacobian(self):
     cholesky_to_vector = tfb.Invert(
-        tfb.ScaleTriL(diag_bijector=tfb.Exp(), diag_shift=None))
+        tfb.FillScaleTriL(diag_bijector=tfb.Exp(), diag_shift=None))
     bijector = tfb.CholeskyToInvCholesky()
     for x in [np.array([[2.]],
                        dtype=np.float64),
@@ -132,8 +131,8 @@ class CholeskyToInvCholeskyTest(tf.test.TestCase):
     fldj0 = bijector.forward_log_det_jacobian(x[0], event_ndims=2)
     fldj1 = bijector.forward_log_det_jacobian(x[1], event_ndims=2)
     fldj_, fldj0_, fldj1_ = self.evaluate([fldj, fldj0, fldj1])
-    self.assertAllClose(fldj_[0], fldj0_)
-    self.assertAllClose(fldj_[1], fldj1_)
+    self.assertAllClose(fldj_[0], fldj0_, rtol=1e-5)
+    self.assertAllClose(fldj_[1], fldj1_, rtol=1e-5)
 
 if __name__ == "__main__":
   tf.test.main()

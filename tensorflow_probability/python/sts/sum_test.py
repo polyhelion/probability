@@ -20,18 +20,19 @@ from __future__ import print_function
 
 # Dependency imports
 import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v1 as tf1
+import tensorflow.compat.v2 as tf
 
 from tensorflow_probability import distributions as tfd
-
+from tensorflow_probability.python.internal import test_util
 from tensorflow_probability.python.sts import AdditiveStateSpaceModel
 from tensorflow_probability.python.sts import LocalLinearTrendStateSpaceModel
 
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
+
 tfl = tf.linalg
 
 
-class _AdditiveStateSpaceModelTest(tf.test.TestCase):
+class _AdditiveStateSpaceModelTest(test_util.TestCase):
 
   def test_identity(self):
 
@@ -167,7 +168,7 @@ class _AdditiveStateSpaceModelTest(tf.test.TestCase):
     else:
       self.assertAllEqual(self.evaluate(additive_ssm.batch_shape_tensor()),
                           batch_shape)
-      self.assertAllEqual(self.evaluate(tf.shape(input=y))[:-2], batch_shape)
+      self.assertAllEqual(self.evaluate(tf.shape(y))[:-2], batch_shape)
 
   def test_multivariate_observations(self):
 
@@ -195,7 +196,7 @@ class _AdditiveStateSpaceModelTest(tf.test.TestCase):
       self.assertAllEqual(self.evaluate(combined_ssm.event_shape_tensor()),
                           expected_event_shape)
       self.assertAllEqual(
-          self.evaluate(tf.shape(input=y))[-2:], expected_event_shape)
+          self.evaluate(tf.shape(y))[-2:], expected_event_shape)
 
   def test_mismatched_num_timesteps_error(self):
 
@@ -233,7 +234,7 @@ class _AdditiveStateSpaceModelTest(tf.test.TestCase):
       self.assertAllEqual(self.evaluate(additive_ssm.batch_shape_tensor()),
                           broadcast_batch_shape)
       self.assertAllEqual(
-          self.evaluate(tf.shape(input=y))[:-2], broadcast_batch_shape)
+          self.evaluate(tf.shape(y))[:-2], broadcast_batch_shape)
 
   def test_broadcasting_correctness(self):
 
@@ -384,8 +385,8 @@ class _AdditiveStateSpaceModelTest(tf.test.TestCase):
     """
     dtype = dtype if dtype is not None else self.dtype
     ndarray = np.asarray(ndarray).astype(dtype)
-    return tf.compat.v1.placeholder_with_default(
-        input=ndarray, shape=ndarray.shape if self.use_static_shape else None)
+    return tf1.placeholder_with_default(
+        ndarray, shape=ndarray.shape if self.use_static_shape else None)
 
   def _dummy_model(self,
                    num_timesteps=5,
@@ -419,7 +420,7 @@ class _AdditiveStateSpaceModelTest(tf.test.TestCase):
                 dtype=dtype)))
 
 
-@test_util.run_all_in_graph_and_eager_modes
+@test_util.test_all_tf_execution_regimes
 class AdditiveStateSpaceModelTestStaticShape32(_AdditiveStateSpaceModelTest):
   dtype = np.float32
   use_static_shape = True
@@ -434,8 +435,7 @@ class AdditiveStateSpaceModelTestDynamicShape32(_AdditiveStateSpaceModelTest):
     # (not necessarily the first) has static num_timesteps.
     num_timesteps = 4
     dynamic_timesteps_component = self._dummy_model(
-        num_timesteps=tf.compat.v1.placeholder_with_default(
-            input=num_timesteps, shape=None))
+        num_timesteps=tf1.placeholder_with_default(num_timesteps, shape=None))
     static_timesteps_component = self._dummy_model(
         num_timesteps=num_timesteps)
 
@@ -448,7 +448,7 @@ class AdditiveStateSpaceModelTestDynamicShape32(_AdditiveStateSpaceModelTest):
     self.assertEqual(num_timesteps, self.evaluate(additive_ssm.num_timesteps))
 
 
-@test_util.run_all_in_graph_and_eager_modes
+@test_util.test_all_tf_execution_regimes
 class AdditiveStateSpaceModelTestStaticShape64(_AdditiveStateSpaceModelTest):
   dtype = np.float64
   use_static_shape = True

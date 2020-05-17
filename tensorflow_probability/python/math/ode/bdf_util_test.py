@@ -20,20 +20,19 @@ from __future__ import print_function
 
 from absl.testing import parameterized
 import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v2 as tf
 
+from tensorflow_probability.python.internal import test_util
 from tensorflow_probability.python.math.ode import bdf_util
 
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import
 
-
-@test_util.run_all_in_graph_and_eager_modes
+@test_util.test_all_tf_execution_regimes
 @parameterized.named_parameters([
     ('float32', tf.float32),
     ('float64', tf.float64),
     ('complex128', tf.complex128),
 ])
-class BDFUtilTest(parameterized.TestCase, tf.test.TestCase):
+class BDFUtilTest(test_util.TestCase):
 
   def test_first_step_size_is_large_when_ode_fn_is_constant(self, dtype):
     initial_state_vec = tf.constant([1.], dtype=dtype)

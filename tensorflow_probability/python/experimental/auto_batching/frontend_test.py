@@ -24,16 +24,17 @@ import collections
 from absl import logging
 import numpy as np
 
-import tensorflow as tf
+import tensorflow.compat.v1 as tf1
+import tensorflow.compat.v2 as tf
 
 from tensorflow_probability.python.experimental.auto_batching import frontend
 from tensorflow_probability.python.experimental.auto_batching import instructions
 from tensorflow_probability.python.experimental.auto_batching import numpy_backend
 from tensorflow_probability.python.experimental.auto_batching import tf_backend
-
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import
+from tensorflow_probability.python.internal import test_util
 
 TF_BACKEND = tf_backend.TensorFlowBackend()
+
 NP_BACKEND = numpy_backend.NumpyBackend()
 
 
@@ -47,8 +48,8 @@ def fibonacci(n):
     return left + right
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class AutoGraphFrontendTest(tf.test.TestCase):
+@test_util.test_all_tf_execution_regimes
+class AutoGraphFrontendTest(test_util.TestCase):
 
   def testFibonacci(self):
     self.assertEqual(1, fibonacci(0))
@@ -587,7 +588,7 @@ class _TestHidingTFBatchSize(object):
       shape = ndarray.shape
     else:
       shape = [None] + list(ndarray.shape[1:])
-    return tf.compat.v1.placeholder_with_default(input=ndarray, shape=shape)
+    return tf1.placeholder_with_default(input=ndarray, shape=shape)
 
   def _check_batch_size(self, tensor, expected):
     if self.use_static_batch_size or tf.executing_eagerly():
@@ -670,13 +671,13 @@ class _TestHidingTFBatchSize(object):
     self.assertAllEqual([16, -9, 18], self.evaluate(answer))
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class TestTFStaticBatchSize(tf.test.TestCase, _TestHidingTFBatchSize):
+@test_util.test_all_tf_execution_regimes
+class TestTFStaticBatchSize(test_util.TestCase, _TestHidingTFBatchSize):
   use_static_batch_size = True
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class TestTFDynamicBatchSize(tf.test.TestCase, _TestHidingTFBatchSize):
+@test_util.test_all_tf_execution_regimes
+class TestTFDynamicBatchSize(test_util.TestCase, _TestHidingTFBatchSize):
   use_static_batch_size = False
 
 if __name__ == '__main__':

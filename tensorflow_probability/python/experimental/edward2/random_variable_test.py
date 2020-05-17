@@ -19,16 +19,15 @@ from __future__ import division
 from __future__ import print_function
 
 import re
+
 from absl.testing import parameterized
 import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v1 as tf1
+import tensorflow.compat.v2 as tf
 import tensorflow_probability as tfp
-
 from tensorflow_probability import edward2 as ed
-
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
-
-tfd = tfp.distributions
+from tensorflow_probability.python import distributions as tfd
+from tensorflow_probability.python.internal import test_util
 
 
 class FakeDistribution(tfd.Distribution):
@@ -42,8 +41,8 @@ class FakeDistribution(tfd.Distribution):
         allow_nan_stats=True)
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class RandomVariableTest(parameterized.TestCase, tf.test.TestCase):
+@test_util.test_all_tf_execution_regimes
+class RandomVariableTest(test_util.TestCase):
 
   def testConstructor(self):
     x = ed.RandomVariable(tfd.Poisson(rate=tf.ones([2, 5])),
@@ -298,7 +297,7 @@ class RandomVariableTest(parameterized.TestCase, tf.test.TestCase):
     if tf.executing_eagerly(): return
     with self.cached_session() as sess:
       x = ed.RandomVariable(tfd.Normal(0.0, 0.1))
-      x_ph = tf.compat.v1.placeholder(tf.float32, [])
+      x_ph = tf1.placeholder(tf.float32, [])
       y = ed.RandomVariable(tfd.Normal(x_ph, 0.1))
       self.assertLess(x.eval(), 5.0)
       self.assertLess(x.eval(sess), 5.0)
@@ -312,7 +311,7 @@ class RandomVariableTest(parameterized.TestCase, tf.test.TestCase):
     if tf.executing_eagerly(): return
     with self.cached_session() as sess:
       x = ed.RandomVariable(tfd.Normal(0.0, 0.1))
-      x_ph = tf.compat.v1.placeholder(tf.float32, [])
+      x_ph = tf1.placeholder(tf.float32, [])
       y = ed.RandomVariable(tfd.Normal(x_ph, 0.1))
       self.assertLess(sess.run(x), 5.0)
       self.assertLess(sess.run(x, feed_dict={x_ph: 100.0}), 5.0)

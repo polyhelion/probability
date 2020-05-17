@@ -25,11 +25,12 @@ import numpy as np
 import tensorflow.compat.v2 as tf
 
 import tensorflow_probability as tfp
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import
+
+from tensorflow_probability.python.internal import test_util
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class PolynomialTest(tf.test.TestCase, parameterized.TestCase):
+@test_util.test_all_tf_execution_regimes
+class PolynomialTest(test_util.TestCase):
   """Test the Polynomial kernel."""
 
   def test_mismatched_float_types_are_bad(self):
@@ -78,7 +79,7 @@ class PolynomialTest(tf.test.TestCase, parameterized.TestCase):
   def testNoneShapes(self):
     k = tfp.math.psd_kernels.Polynomial(
         bias_variance=np.reshape(np.arange(12.), [2, 3, 2]))
-    self.assertEqual([2, 3, 2], k.batch_shape.as_list())
+    self.assertAllEqual([2, 3, 2], k.batch_shape)
 
   @parameterized.named_parameters(
       dict(
@@ -124,7 +125,7 @@ class PolynomialTest(tf.test.TestCase, parameterized.TestCase):
         shift=shift,
         exponent=exponent,
         validate_args=True)
-    self.assertAllEqual(shape, k.batch_shape.as_list())
+    self.assertAllEqual(shape, k.batch_shape)
     self.assertAllEqual(shape, self.evaluate(k.batch_shape_tensor()))
 
   def testFloat32(self):
@@ -247,8 +248,8 @@ class PolynomialTest(tf.test.TestCase, parameterized.TestCase):
     )
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class LinearTest(tf.test.TestCase, parameterized.TestCase):
+@test_util.test_all_tf_execution_regimes
+class LinearTest(test_util.TestCase):
   """Test the Linear kernel."""
 
   def testIsPolynomial(self):

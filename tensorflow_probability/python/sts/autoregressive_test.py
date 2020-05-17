@@ -20,14 +20,13 @@ from __future__ import print_function
 
 # Dependency imports
 import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v1 as tf1
+import tensorflow.compat.v2 as tf
 
 from tensorflow_probability import distributions as tfd
-
+from tensorflow_probability.python.internal import test_util
 from tensorflow_probability.python.sts import AutoregressiveStateSpaceModel
 from tensorflow_probability.python.sts import LocalLevelStateSpaceModel
-
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
 
 
 def ar_explicit_logp(y, coefs, level_scale):
@@ -51,7 +50,7 @@ def ar_explicit_logp(y, coefs, level_scale):
   return lp
 
 
-class _AutoregressiveStateSpaceModelTest(tf.test.TestCase):
+class _AutoregressiveStateSpaceModelTest(test_util.TestCase):
 
   def testEqualsLocalLevel(self):
     # An AR1 process with coef 1 is just a random walk, equivalent to a local
@@ -143,7 +142,7 @@ class _AutoregressiveStateSpaceModelTest(tf.test.TestCase):
     if self.use_static_shape:
       self.assertAllEqual(y.shape.as_list()[:-2], batch_shape)
     else:
-      self.assertAllEqual(self.evaluate(tf.shape(input=y))[:-2], batch_shape)
+      self.assertAllEqual(self.evaluate(tf.shape(y))[:-2], batch_shape)
 
   def _build_placeholder(self, ndarray):
     """Convert a numpy array to a TF placeholder.
@@ -158,25 +157,25 @@ class _AutoregressiveStateSpaceModelTest(tf.test.TestCase):
     """
 
     ndarray = np.asarray(ndarray).astype(self.dtype)
-    return tf.compat.v1.placeholder_with_default(
-        input=ndarray, shape=ndarray.shape if self.use_static_shape else None)
+    return tf1.placeholder_with_default(
+        ndarray, shape=ndarray.shape if self.use_static_shape else None)
 
 
-@test_util.run_all_in_graph_and_eager_modes
+@test_util.test_all_tf_execution_regimes
 class AutoregressiveStateSpaceModelTestStaticShape32(
     _AutoregressiveStateSpaceModelTest):
   dtype = np.float32
   use_static_shape = True
 
 
-@test_util.run_all_in_graph_and_eager_modes
+@test_util.test_all_tf_execution_regimes
 class AutoregressiveStateSpaceModelTestDynamicShape32(
     _AutoregressiveStateSpaceModelTest):
   dtype = np.float32
   use_static_shape = False
 
 
-@test_util.run_all_in_graph_and_eager_modes
+@test_util.test_all_tf_execution_regimes
 class AutoregressiveStateSpaceModelTestStaticShape64(
     _AutoregressiveStateSpaceModelTest):
   dtype = np.float64

@@ -21,12 +21,11 @@ from __future__ import print_function
 # Dependency imports
 import numpy as np
 
-import tensorflow as tf
+import tensorflow.compat.v2 as tf
 import tensorflow_probability as tfp
 
-from tensorflow_probability.python.internal import test_case
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import
-from tensorflow.python.keras import testing_utils
+from tensorflow_probability.python.internal import test_util
+from tensorflow.python.keras import testing_utils  # pylint: disable=g-direct-tensorflow-import
 
 tfd = tfp.distributions
 
@@ -100,8 +99,8 @@ class MockKLDivergence(object):
     return self.result
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class DenseVariational(test_case.TestCase):
+@test_util.test_all_tf_execution_regimes
+class DenseVariational(test_util.TestCase):
 
   def _testKerasLayer(self, layer_class):
     def kernel_posterior_fn(dtype, shape, name, trainable, add_variable_fn):
@@ -109,12 +108,12 @@ class DenseVariational(test_case.TestCase):
       del name, trainable, add_variable_fn  # unused
       # Deserialized Keras objects do not perform lexical scoping. Any modules
       # that the function requires must be imported within the function.
-      import tensorflow as tf  # pylint: disable=g-import-not-at-top,redefined-outer-name,reimported
+      import tensorflow.compat.v2 as tf  # pylint: disable=g-import-not-at-top,redefined-outer-name,reimported
       import tensorflow_probability as tfp  # pylint: disable=g-import-not-at-top,redefined-outer-name,reimported
       tfd = tfp.distributions  # pylint: disable=redefined-outer-name
 
       dist = tfd.Normal(loc=tf.zeros(shape, dtype), scale=tf.ones(shape, dtype))
-      batch_ndims = tf.size(input=dist.batch_shape_tensor())
+      batch_ndims = tf.size(dist.batch_shape_tensor())
       return tfd.Independent(dist, reinterpreted_batch_ndims=batch_ndims)
 
     kwargs = {'units': 3,
@@ -312,14 +311,14 @@ class DenseVariational(test_case.TestCase):
   def testDenseLocalReparameterization(self):
     batch_size, in_size, out_size = 2, 3, 4
     with self.cached_session() as sess:
-      tf.compat.v1.set_random_seed(9068)
+      tf.random.set_seed(9068)
       (kernel_posterior, kernel_prior, kernel_divergence,
        bias_posterior, bias_prior, bias_divergence, layer, inputs,
        outputs, kl_penalty) = self._testDenseSetUp(
            tfp.layers.DenseLocalReparameterization,
            batch_size, in_size, out_size)
 
-      tf.compat.v1.set_random_seed(9068)
+      tf.random.set_seed(9068)
       expected_kernel_posterior_affine = tfd.Normal(
           loc=tf.matmul(inputs, kernel_posterior.result_loc),
           scale=tf.matmul(
@@ -377,21 +376,21 @@ class DenseVariational(test_case.TestCase):
   def testDenseFlipout(self):
     batch_size, in_size, out_size = 2, 3, 4
     with self.cached_session() as sess:
-      tf.compat.v1.set_random_seed(9069)
+      tf.random.set_seed(9069)
       (kernel_posterior, kernel_prior, kernel_divergence,
        bias_posterior, bias_prior, bias_divergence, layer, inputs,
        outputs, kl_penalty) = self._testDenseSetUp(
            tfp.layers.DenseFlipout,
            batch_size, in_size, out_size, seed=44)
 
-      tf.compat.v1.set_random_seed(9069)
+      tf.random.set_seed(9069)
       expected_kernel_posterior_affine = tfd.Normal(
           loc=tf.zeros_like(kernel_posterior.result_loc),
           scale=kernel_posterior.result_scale)
       expected_kernel_posterior_affine_tensor = (
           expected_kernel_posterior_affine.sample(seed=42))
 
-      stream = tfd.SeedStream(layer.seed, salt='DenseFlipout')
+      stream = tfp.util.SeedStream(layer.seed, salt='DenseFlipout')
 
       sign_input = tf.random.uniform([batch_size, in_size],
                                      minval=0,
@@ -513,11 +512,7 @@ class DenseVariational(test_case.TestCase):
         tfp.layers.DenseLocalReparameterization(out_size)
     ])
 
-    # TODO(b/139314757): The call to `model.fit` will fail if the model is
-    # compiled with the default `experimental_run_tf_function=True`.  Remove
-    # `experimental_run_tf_function=False` once this bug is fixed.
-    model.compile(
-        loss='mse', optimizer='adam', experimental_run_tf_function=False)
+    model.compile(loss='mse', optimizer='adam')
     model.fit(x, y, batch_size=batch_size, epochs=3)
 
     batch_input = tf.random.uniform([batch_size, in_size])

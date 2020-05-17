@@ -21,11 +21,14 @@ from __future__ import print_function
 import types
 # Dependency imports
 import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v1 as tf1
+import tensorflow.compat.v2 as tf
 
-from tensorflow_probability.python import distributions as tfd
-from tensorflow_probability.python import util as util
-from tensorflow.python.keras.utils import generic_utils
+from tensorflow_probability.python import util as tfp_util
+from tensorflow_probability.python.distributions import deterministic as deterministic_lib
+from tensorflow_probability.python.distributions import independent as independent_lib
+from tensorflow_probability.python.distributions import normal as normal_lib
+from tensorflow.python.keras.utils import generic_utils  # pylint: disable=g-direct-tensorflow-import
 
 
 __all__ = [
@@ -39,8 +42,8 @@ __all__ = [
 
 def default_loc_scale_fn(
     is_singular=False,
-    loc_initializer=tf.compat.v1.initializers.random_normal(stddev=0.1),
-    untransformed_scale_initializer=tf.compat.v1.initializers.random_normal(
+    loc_initializer=tf1.initializers.random_normal(stddev=0.1),
+    untransformed_scale_initializer=tf1.initializers.random_normal(
         mean=-3., stddev=0.1),
     loc_regularizer=None,
     untransformed_scale_regularizer=None,
@@ -111,17 +114,17 @@ def default_loc_scale_fn(
         constraint=untransformed_scale_constraint,
         dtype=dtype,
         trainable=trainable)
-    scale = util.DeferredTensor(
-        lambda x: (np.finfo(dtype.as_numpy_dtype).eps + tf.nn.softplus(x)),
-        untransformed_scale)
+    scale = tfp_util.DeferredTensor(
+        untransformed_scale,
+        lambda x: (np.finfo(dtype.as_numpy_dtype).eps + tf.nn.softplus(x)))
     return loc, scale
   return _fn
 
 
 def default_mean_field_normal_fn(
     is_singular=False,
-    loc_initializer=tf.compat.v1.initializers.random_normal(stddev=0.1),
-    untransformed_scale_initializer=tf.compat.v1.initializers.random_normal(
+    loc_initializer=tf1.initializers.random_normal(stddev=0.1),
+    untransformed_scale_initializer=tf1.initializers.random_normal(
         mean=-3., stddev=0.1),
     loc_regularizer=None,
     untransformed_scale_regularizer=None,
@@ -130,7 +133,7 @@ def default_mean_field_normal_fn(
   """Creates a function to build Normal distributions with trainable params.
 
   This function produces a closure which produces `tfd.Normal`
-  parameterized by a loc` and `scale` each created using `tf.get_variable`.
+  parameterized by a `loc` and `scale` each created using `tf.get_variable`.
 
   Args:
     is_singular: Python `bool` if `True`, forces the special case limit of
@@ -187,11 +190,12 @@ def default_mean_field_normal_fn(
     """
     loc, scale = loc_scale_fn(dtype, shape, name, trainable, add_variable_fn)
     if scale is None:
-      dist = tfd.Deterministic(loc=loc)
+      dist = deterministic_lib.Deterministic(loc=loc)
     else:
-      dist = tfd.Normal(loc=loc, scale=scale)
-    batch_ndims = tf.size(input=dist.batch_shape_tensor())
-    return tfd.Independent(dist, reinterpreted_batch_ndims=batch_ndims)
+      dist = normal_lib.Normal(loc=loc, scale=scale)
+    batch_ndims = tf.size(dist.batch_shape_tensor())
+    return independent_lib.Independent(
+        dist, reinterpreted_batch_ndims=batch_ndims)
   return _fn
 
 
@@ -213,9 +217,11 @@ def default_multivariate_normal_fn(dtype, shape, name, trainable,
     Multivariate standard `Normal` distribution.
   """
   del name, trainable, add_variable_fn   # unused
-  dist = tfd.Normal(loc=tf.zeros(shape, dtype), scale=dtype.as_numpy_dtype(1))
-  batch_ndims = tf.size(input=dist.batch_shape_tensor())
-  return tfd.Independent(dist, reinterpreted_batch_ndims=batch_ndims)
+  dist = normal_lib.Normal(
+      loc=tf.zeros(shape, dtype), scale=dtype.as_numpy_dtype(1))
+  batch_ndims = tf.size(dist.batch_shape_tensor())
+  return independent_lib.Independent(
+      dist, reinterpreted_batch_ndims=batch_ndims)
 
 
 def deserialize_function(serial, function_type):

@@ -24,11 +24,11 @@ import numpy as np
 import tensorflow.compat.v2 as tf
 
 from tensorflow_probability.python import bijectors as tfb
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
+from tensorflow_probability.python.internal import test_util
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class AffineLinearOperatorTest(tf.test.TestCase):
+@test_util.test_all_tf_execution_regimes
+class AffineLinearOperatorTest(test_util.TestCase):
 
   def testIdentity(self):
     affine = tfb.AffineLinearOperator(validate_args=True)
@@ -145,6 +145,7 @@ class AffineLinearOperatorTest(tf.test.TestCase):
         self.evaluate(-affine.inverse_log_det_jacobian(y, event_ndims=2)),
         self.evaluate(affine.forward_log_det_jacobian(x, event_ndims=2)))
 
+  @test_util.jax_disable_variable_test
   def testVariableGradient(self):
     b = tfb.AffineLinearOperator(shift=tf.Variable(-1.))
 

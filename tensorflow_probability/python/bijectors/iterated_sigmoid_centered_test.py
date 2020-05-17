@@ -19,18 +19,18 @@ from __future__ import division
 from __future__ import print_function
 
 # Dependency imports
+
 import numpy as np
 import tensorflow.compat.v1 as tf1
 import tensorflow.compat.v2 as tf
 from tensorflow_probability.python import bijectors as tfb
-
 from tensorflow_probability.python.bijectors import bijector_test_util
 from tensorflow_probability.python.internal import tensorshape_util
-from tensorflow_probability.python.internal import test_util as tfp_test_util
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import
+from tensorflow_probability.python.internal import test_util
+from tensorflow_probability.python.math.gradient import batch_jacobian
 
 
-@test_util.run_all_in_graph_and_eager_modes
+@test_util.test_all_tf_execution_regimes
 class _IteratedSigmoidCenteredBijectorTest(object):
   """Tests correctness of Stick breaking transformation."""
 
@@ -108,32 +108,31 @@ class _IteratedSigmoidCenteredBijectorTest(object):
     bijector_test_util.assert_bijective_and_finite(
         iterated_sigmoid, x, y, eval_func=self.evaluate, event_ndims=1)
 
-  @tfp_test_util.numpy_disable_gradient_test
+  @test_util.numpy_disable_gradient_test
+  @test_util.jax_disable_test_missing_functionality(
+      "https://github.com/google/jax/issues/1212")
   def testJacobianConsistent(self):
-    with tf.GradientTape(persistent=True) as g:
-      x = tf.constant((60 * np.random.rand(10) - 30).reshape(5, 2))
-      g.watch(x)
-      bijector = tfb.IteratedSigmoidCentered()
-      y = bijector.forward(x)
-    jacobian_matrix = g.batch_jacobian(y, x, experimental_use_pfor=False)
+    bijector = tfb.IteratedSigmoidCentered()
+    x = tf.constant((60 * np.random.rand(10) - 30).reshape(5, 2))
+    jacobian_matrix = batch_jacobian(bijector.forward, x)
     # In our case, y[-1] is determined by all the other y, so we can drop it
     # for the jacobian calculation.
     jacobian_matrix = jacobian_matrix[..., :-1, :]
     self.assertAllClose(
-        tf.linalg.slogdet(jacobian_matrix)[1],
+        tf.linalg.slogdet(jacobian_matrix).log_abs_determinant,
         bijector.forward_log_det_jacobian(x, event_ndims=1),
         atol=0.,
         rtol=1e-7)
 
 
 class IteratedSigmoidCenteredBijectorTestFloat32(
-    tf.test.TestCase,
+    test_util.TestCase,
     _IteratedSigmoidCenteredBijectorTest):
   dtype = np.float32
 
 
 class IteratedSigmoidCenteredBijectorTestFloat64(
-    tf.test.TestCase,
+    test_util.TestCase,
     _IteratedSigmoidCenteredBijectorTest):
   dtype = np.float64
 

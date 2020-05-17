@@ -61,12 +61,13 @@ py_library(
 
 py_test(
     name = "autoregressive_test",
-    size = "medium",
+    size = "small",
     srcs = ["autoregressive_test.py"],
     deps = [
         # numpy dep,
         # tensorflow dep,
         "//tensorflow_probability",
+        "//tensorflow_probability/python/internal:test_util",
     ],
 )
 
@@ -85,11 +86,13 @@ py_test(
     name = "decomposition_test",
     size = "medium",
     srcs = ["decomposition_test.py"],
+    shard_count = 6,
     deps = [
         # absl/testing:parameterized dep,
         # numpy dep,
         # tensorflow dep,
         "//tensorflow_probability",
+        "//tensorflow_probability/python/internal:test_util",
     ],
 )
 
@@ -106,12 +109,13 @@ py_library(
 
 py_test(
     name = "dynamic_regression_test",
-    size = "medium",
+    size = "small",
     srcs = ["dynamic_regression_test.py"],
     deps = [
         # numpy dep,
         # tensorflow dep,
         "//tensorflow_probability",
+        "//tensorflow_probability/python/internal:test_util",
     ],
 )
 
@@ -122,7 +126,13 @@ py_library(
     deps = [
         # numpy dep,
         # tensorflow dep,
+        "//tensorflow_probability/python/bijectors:softplus",
+        "//tensorflow_probability/python/distributions:independent",
+        "//tensorflow_probability/python/distributions:joint_distribution_named",
+        "//tensorflow_probability/python/distributions:normal",
+        "//tensorflow_probability/python/distributions:transformed_distribution",
         "//tensorflow_probability/python/sts/internal",
+        "//tensorflow_probability/python/util",
     ],
 )
 
@@ -136,6 +146,7 @@ py_test(
         # numpy dep,
         # tensorflow dep,
         "//tensorflow_probability",
+        "//tensorflow_probability/python/internal:test_util",
     ],
 )
 
@@ -152,13 +163,14 @@ py_library(
 
 py_test(
     name = "forecast_test",
-    size = "large",
+    size = "medium",
     srcs = ["forecast_test.py"],
     shard_count = 6,
     deps = [
         # numpy dep,
         # tensorflow dep,
         "//tensorflow_probability",
+        "//tensorflow_probability/python/internal:test_util",
     ],
 )
 
@@ -175,12 +187,13 @@ py_library(
 
 py_test(
     name = "local_level_test",
-    size = "medium",
+    size = "small",
     srcs = ["local_level_test.py"],
     deps = [
         # numpy dep,
         # tensorflow dep,
         "//tensorflow_probability",
+        "//tensorflow_probability/python/internal:test_util",
     ],
 )
 
@@ -197,12 +210,13 @@ py_library(
 
 py_test(
     name = "local_linear_trend_test",
-    size = "medium",
+    size = "small",
     srcs = ["local_linear_trend_test.py"],
     deps = [
         # numpy dep,
         # tensorflow dep,
         "//tensorflow_probability",
+        "//tensorflow_probability/python/internal:test_util",
     ],
 )
 
@@ -225,6 +239,7 @@ py_test(
         # numpy dep,
         # tensorflow dep,
         "//tensorflow_probability",
+        "//tensorflow_probability/python/internal:test_util",
     ],
 )
 
@@ -249,6 +264,7 @@ py_test(
         # numpy dep,
         # tensorflow dep,
         "//tensorflow_probability",
+        "//tensorflow_probability/python/internal:test_util",
     ],
 )
 
@@ -265,12 +281,13 @@ py_library(
 
 py_test(
     name = "semilocal_linear_trend_test",
-    size = "medium",
+    size = "small",
     srcs = ["semilocal_linear_trend_test.py"],
     deps = [
         # numpy dep,
         # tensorflow dep,
         "//tensorflow_probability",
+        "//tensorflow_probability/python/internal:test_util",
     ],
 )
 
@@ -287,12 +304,13 @@ py_library(
 
 py_test(
     name = "smooth_seasonal_test",
-    size = "medium",
+    size = "small",
     srcs = ["smooth_seasonal_test.py"],
     deps = [
         # numpy dep,
         # tensorflow dep,
         "//tensorflow_probability",
+        "//tensorflow_probability/python/internal:test_util",
     ],
 )
 
@@ -304,6 +322,7 @@ py_library(
         # numpy dep,
         # tensorflow dep,
         "//tensorflow_probability/python/sts/internal",
+        "//tensorflow_probability/python/util",
     ],
 )
 
@@ -332,12 +351,13 @@ py_library(
 
 py_test(
     name = "sum_test",
-    size = "large",
+    size = "medium",
     srcs = ["sum_test.py"],
     shard_count = 2,
     deps = [
         # numpy dep,
         # tensorflow dep,
         "//tensorflow_probability",
+        "//tensorflow_probability/python/internal:test_util",
     ],
 )

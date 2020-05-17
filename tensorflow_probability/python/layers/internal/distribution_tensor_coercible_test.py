@@ -16,20 +16,22 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import gc
 import operator
 
 # Dependency imports
+
 from absl.testing import parameterized
 import numpy as np
 import tensorflow.compat.v1 as tf1
 import tensorflow.compat.v2 as tf
 import tensorflow_probability as tfp
-
+from tensorflow_probability.python import distributions as tfd
+from tensorflow_probability.python.internal import test_util
 from tensorflow_probability.python.layers.internal import distribution_tensor_coercible
 
-tfb = tfp.bijectors
-tfd = tfp.distributions
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
+from tensorflow.python.framework import test_util as tf_test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
+
 dtc = distribution_tensor_coercible
 
 
@@ -61,9 +63,8 @@ class Normal(tfd.Normal):
     return super(Normal, self).__add__(x)
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class DistributionTensorConversionTest(
-    tf.test.TestCase, parameterized.TestCase):
+@test_util.test_all_tf_execution_regimes
+class DistributionTensorConversionTest(test_util.TestCase):
 
   def testErrorsByDefault(self):
     x = tfd.Normal(loc=0., scale=1.)
@@ -266,9 +267,30 @@ class DistributionTensorConversionTest(
   def testWhileLoop(self):
     self._testWhileLoop()
 
-  @test_util.enable_control_flow_v2
   def testWhileLoopWithControlFlowV2(self):
-    self._testWhileLoop()
+    tf_test_util.enable_control_flow_v2(self._testWhileLoop)()
+
+
+@test_util.test_all_tf_execution_regimes
+class MemoryLeakTest(test_util.TestCase):
+
+  def testTypeObjectLeakage(self):
+    if not tf.executing_eagerly():
+      self.skipTest('only relevant to eager')
+
+    layer = tfp.layers.DistributionLambda(tfp.distributions.Categorical)
+    x = tf.constant([-.23, 1.23, 1.42])
+    dist = layer(x)
+    gc.collect()
+    before_objs = len(gc.get_objects())
+    for _ in range(int(1e2)):
+      dist = layer(x)
+    gc.collect()
+    after_objs = len(gc.get_objects())
+    del dist
+
+    # This was 43150(py2)/43750(py3) before PR#532.
+    self.assertLess(after_objs - before_objs, 1)
 
 
 if __name__ == '__main__':

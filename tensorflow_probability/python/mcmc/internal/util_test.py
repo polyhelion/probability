@@ -20,22 +20,20 @@ from __future__ import print_function
 
 import collections
 import warnings
+
 # Dependency imports
 
 from absl.testing import parameterized
 import numpy as np
-import tensorflow as tf
-import tensorflow_probability as tfp
-
+import tensorflow.compat.v1 as tf1
+import tensorflow.compat.v2 as tf
+from tensorflow_probability.python import distributions as tfd
+from tensorflow_probability.python.internal import test_util
 from tensorflow_probability.python.mcmc.internal import util
 
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import
 
-tfd = tfp.distributions
-
-
-@test_util.run_all_in_graph_and_eager_modes
-class ChooseTest(tf.test.TestCase):
+@test_util.test_all_tf_execution_regimes
+class ChooseTest(test_util.TestCase):
 
   def test_works_for_nested_namedtuple(self):
     Results = collections.namedtuple('Results', ['field1', 'inner'])  # pylint: disable=invalid-name
@@ -94,7 +92,7 @@ class ChooseTest(tf.test.TestCase):
     self.assertAllEqual(expected, chosen_)
 
 
-class IsNamedTupleLikeTest(tf.test.TestCase):
+class IsNamedTupleLikeTest(test_util.TestCase):
 
   def test_true_for_namedtuple_without_fields(self):
     NoFields = collections.namedtuple('NoFields', [])  # pylint: disable=invalid-name
@@ -114,7 +112,7 @@ class IsNamedTupleLikeTest(tf.test.TestCase):
     self.assertFalse(util.is_namedtuple_like(np.int32()))
 
 
-class GradientTest(tf.test.TestCase):
+class GradientTest(test_util.TestCase):
 
   def testGradientComputesCorrectly(self):
     dtype = np.float32
@@ -159,13 +157,13 @@ class GradientTest(tf.test.TestCase):
         util.maybe_call_fn_and_grads(fn, fn_args)
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class SmartForLoopTest(tf.test.TestCase):
+@test_util.test_all_tf_execution_regimes
+class SmartForLoopTest(test_util.TestCase):
 
   def test_python_for_loop(self):
     counter = None
     # Not @parameterized because the tf.constants would be executed outside the
-    # Eager mode that @test_util.run_all_in_graph_and_eager_modes creates, and
+    # Eager mode that @test_util.test_all_tf_execution_regimes creates, and
     # TF is unhappy about that.
     for n in [10, tf.constant(10, dtype=tf.int64),
               tf.constant(10, dtype=tf.int32)]:
@@ -181,7 +179,7 @@ class SmartForLoopTest(tf.test.TestCase):
 
   def test_tf_while_loop(self):
     iters = 10
-    n = tf.compat.v1.placeholder_with_default(input=np.int64(iters), shape=())
+    n = tf1.placeholder_with_default(np.int64(iters), shape=())
     counter = collections.Counter()
     def body(x):
       counter['body_calls'] += 1
@@ -194,8 +192,8 @@ class SmartForLoopTest(tf.test.TestCase):
     self.assertAllClose([11], self.evaluate(result))
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class TraceScanTest(tf.test.TestCase):
+@test_util.test_all_tf_execution_regimes
+class TraceScanTest(test_util.TestCase):
 
   def testBasic(self):
 
@@ -228,7 +226,106 @@ def _test_setter_fn(simple_results, increment=1):
   return simple_results._replace(value=simple_results.value + increment)
 
 
-class MakeInnermostSetterTest(tf.test.TestCase):
+@test_util.test_all_tf_execution_regimes
+class IndexRemappingGatherTest(test_util.TestCase):
+
+  def test_rank_1_same_as_gather(self):
+    params = [10, 11, 12, 13]
+    indices = [3, 2, 0]
+
+    expected = [13, 12, 10]
+    result = util.index_remapping_gather(params, indices)
+    self.assertAllEqual(np.asarray(indices).shape, result.shape)
+
+    self.assertAllEqual(expected, self.evaluate(result))
+
+  def test_rank_2_and_axis_0(self):
+    params = [[95, 46, 17],
+              [46, 29, 55]]
+    indices = [[0, 0, 1],
+               [1, 0, 1]]
+
+    expected = [[95, 46, 55],
+                [46, 46, 55]]
+    result = util.index_remapping_gather(params, indices)
+
+    self.assertAllEqual(np.asarray(params).shape, result.shape)
+
+    self.assertAllEqual(expected, self.evaluate(result))
+
+  def test_rank_3_and_axis_0(self):
+    axis = 0
+    params = np.random.randint(10, 100, size=(4, 5, 6))
+    indices = np.random.randint(0, params.shape[axis], size=(3, 5, 6))
+
+    result = util.index_remapping_gather(params, indices)
+    self.assertAllEqual(indices.shape[:axis + 1] + params.shape[axis + 1:],
+                        result.shape)
+    result_ = self.evaluate(result)
+
+    for i in range(indices.shape[0]):
+      for j in range(params.shape[1]):
+        for k in range(params.shape[2]):
+          self.assertEqual(params[indices[i, j, k], j, k], result_[i, j, k])
+
+  def test_params_rank3_indices_rank2_axis_0(self):
+    axis = 0
+    params = np.random.randint(10, 100, size=(4, 5, 2))
+    indices = np.random.randint(0, params.shape[axis], size=(6, 5))
+
+    result = util.index_remapping_gather(params, indices)
+    self.assertAllEqual(indices.shape[:axis + 1] + params.shape[axis + 1:],
+                        result.shape)
+    result_ = self.evaluate(result)
+
+    for i in range(indices.shape[0]):
+      for j in range(params.shape[1]):
+        for k in range(params.shape[2]):
+          self.assertEqual(params[indices[i, j], j, k], result_[i, j, k])
+
+  def test_params_rank3_indices_rank1_axis_1(self):
+    axis = 1
+    params = np.random.randint(10, 100, size=[4, 5, 2])
+    indices = np.random.randint(0, params.shape[axis], size=[6])
+
+    result = util.index_remapping_gather(params, indices, axis=axis)
+    self.assertAllEqual(
+        params.shape[:axis] +
+        indices.shape[:1] +
+        params.shape[axis + 1:],
+        result.shape)
+    result_ = self.evaluate(result)
+
+    for i in range(params.shape[0]):
+      for j in range(indices.shape[0]):
+        for k in range(params.shape[2]):
+          self.assertEqual(params[i, indices[j], k], result_[i, j, k])
+
+  def test_params_rank5_indices_rank3_axis_2_iaxis_1(self):
+    axis = 2
+    indices_axis = 1
+    params = np.random.randint(10, 100, size=[4, 5, 2, 3, 4])
+    indices = np.random.randint(0, params.shape[axis], size=[5, 6, 3])
+
+    result = util.index_remapping_gather(
+        params, indices, axis=axis, indices_axis=indices_axis)
+    self.assertAllEqual(
+        params.shape[:axis] +
+        indices.shape[indices_axis:indices_axis + 1] +
+        params.shape[axis + 1:],
+        result.shape)
+    result_ = self.evaluate(result)
+
+    for i in range(params.shape[0]):
+      for j in range(params.shape[1]):
+        for k in range(indices.shape[1]):
+          for l in range(params.shape[3]):
+            for m in range(params.shape[4]):
+              self.assertEqual(params[i, j, indices[j, k, l], l, m],
+                               result_[i, j, k, l, m])
+
+
+class MakeInnermostSetterTest(test_util.TestCase):
 
   def testNoWrapper(self):
     results = SimpleResults(1)
@@ -262,7 +359,7 @@ class MakeInnermostSetterTest(tf.test.TestCase):
     self.assertEqual(2, new_results.inner_results.inner_results.value)
 
 
-class MakeInnermostGetterTest(tf.test.TestCase):
+class MakeInnermostGetterTest(test_util.TestCase):
 
   def testNoWrapper(self):
     results = SimpleResults(1)
@@ -323,8 +420,7 @@ class FakeInnerNoParameters(object):
   pass
 
 
-class EnableStoreParametersInResultsTest(tf.test.TestCase,
-                                         parameterized.TestCase):
+class EnableStoreParametersInResultsTest(test_util.TestCase):
 
   @parameterized.parameters(FakeInnerOld(),
                             FakeInnerNew(),
@@ -375,12 +471,12 @@ tf.register_tensor_conversion_function(
     TensorConvertible, conversion_func=lambda *args: tf.constant(0))
 
 
-class SimpleTensorWarningTest(tf.test.TestCase, parameterized.TestCase):
+class SimpleTensorWarningTest(test_util.TestCase):
 
   # We must defer creating the TF objects until the body of the test.
   # pylint: disable=unnecessary-lambda
   @parameterized.parameters([lambda: tf.Variable(0)],
-                            [lambda: tf.compat.v2.Variable(0)],
+                            [lambda: tf.Variable(0)],
                             [lambda: TensorConvertible()])
   def testWarn(self, tensor_callable):
     tensor = tensor_callable()

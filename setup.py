@@ -31,7 +31,8 @@ REQUIRED_PACKAGES = [
     'six >= 1.10.0',
     'numpy >= 1.13.3',
     'decorator',
-    'cloudpickle == 1.1.1',
+    'cloudpickle == 1.3',  # TODO(b/155109696): Unpin cloudpickle version.
+    'gast >= 0.3.2'  # For autobatching
 ]
 
 if '--release' in sys.argv:
@@ -45,6 +46,11 @@ if release:
   project_name = 'tensorflow-probability'
 else:
   project_name = 'tfp-nightly'
+
+if release:
+  TFDS_PACKAGE = 'tensorflow-datasets >= 2.2.0'
+else:
+  TFDS_PACKAGE = 'tfds-nightly'
 
 
 class BinaryDistribution(Distribution):
@@ -84,12 +90,11 @@ setup(
         'Intended Audience :: Education',
         'Intended Audience :: Science/Research',
         'License :: OSI Approved :: Apache Software License',
-        'Programming Language :: Python :: 2',
-        'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.4',
         'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7',
         'Topic :: Scientific/Engineering',
         'Topic :: Scientific/Engineering :: Mathematics',
         'Topic :: Scientific/Engineering :: Artificial Intelligence',
@@ -98,4 +103,8 @@ setup(
         'Topic :: Software Development :: Libraries :: Python Modules',
     ],
     keywords='tensorflow probability statistics bayesian machine learning',
+    extras_require={  # e.g. `pip install tfp-nightly[jax]`
+        'jax': ['jax', 'jaxlib'],
+        'tfds': [TFDS_PACKAGE],
+    }
 )

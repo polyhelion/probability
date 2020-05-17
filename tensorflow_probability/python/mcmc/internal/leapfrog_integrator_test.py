@@ -19,20 +19,21 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v1 as tf1
+import tensorflow.compat.v2 as tf
 
+from tensorflow_probability.python.internal import test_util
 from tensorflow_probability.python.mcmc.internal import leapfrog_integrator as leapfrog_impl
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class LeapfrogIntegratorTest(tf.test.TestCase):
+@test_util.test_all_tf_execution_regimes
+class LeapfrogIntegratorTest(test_util.TestCase):
 
   def setUp(self):
     self._shape_param = 5.
     self._rate_param = 10.
 
-    tf.compat.v1.random.set_random_seed(10003)
+    tf.random.set_seed(10003)
     np.random.seed(10003)
 
   def assertAllFinite(self, x):
@@ -49,34 +50,32 @@ class LeapfrogIntegratorTest(tf.test.TestCase):
       log_prob: The log-pdf up to a normalizing constant.
     """
     return tf.reduce_sum(
-        input_tensor=self._shape_param * x - self._rate_param * tf.exp(x),
+        self._shape_param * x - self._rate_param * tf.exp(x),
         axis=event_dims)
 
-  def _integrator_conserves_energy(self, x, independent_chain_ndims):
+  def _integrator_conserves_energy(self, x, independent_chain_ndims, seed):
     event_dims = tf.range(independent_chain_ndims, tf.rank(x))
 
     target_fn = lambda x: self._log_gamma_log_prob(x, event_dims)
 
-    m = tf.random.normal(tf.shape(input=x))
+    m = tf.random.normal(tf.shape(x), seed=seed)
     log_prob_0 = target_fn(x)
-    old_energy = -log_prob_0 + 0.5 * tf.reduce_sum(
-        input_tensor=m**2., axis=event_dims)
+    old_energy = -log_prob_0 + 0.5 * tf.reduce_sum(m**2., axis=event_dims)
 
     event_size = np.prod(
         self.evaluate(x).shape[independent_chain_ndims:])
 
     integrator = leapfrog_impl.SimpleLeapfrogIntegrator(
         target_fn,
-        step_sizes=[0.1 / event_size],
+        step_sizes=[0.09 / event_size],
         num_steps=1000)
 
     [[new_m], [_], log_prob_1, [_]] = integrator([m], [x])
 
-    new_energy = -log_prob_1 + 0.5 * tf.reduce_sum(
-        input_tensor=new_m**2., axis=event_dims)
+    new_energy = -log_prob_1 + 0.5 * tf.reduce_sum(new_m**2., axis=event_dims)
 
     old_energy_, new_energy_ = self.evaluate([old_energy, new_energy])
-    tf.compat.v1.logging.vlog(
+    tf1.logging.vlog(
         1, 'average energy relative change: {}'.format(
             (1. - new_energy_ / old_energy_).mean()))
     self.assertAllClose(old_energy_, new_energy_, atol=0., rtol=0.02)
@@ -92,8 +91,12 @@ class LeapfrogIntegratorTest(tf.test.TestCase):
       independent_chain_ndims: Python `int` scalar representing the number of
         dims associated with independent chains.
     """
-    x = tf.constant(np.random.rand(50, 10, 2), np.float32)
-    self._integrator_conserves_energy(x, independent_chain_ndims)
+    seed_stream = test_util.test_seed_stream()
+    x = self.evaluate(0.1 * tf.random.normal(
+        shape=(50, 10, 2), seed=seed_stream()))
+    x = tf.constant(x)
+    self._integrator_conserves_energy(
+        x, independent_chain_ndims, seed=seed_stream())
 
   def testIntegratorEnergyConservationNullShape(self):
     self._integrator_conserves_energy_wrapper(0)

@@ -21,7 +21,7 @@ from __future__ import print_function
 # Dependency imports
 import numpy as np
 
-import tensorflow as tf
+import tensorflow.compat.v2 as tf
 
 
 class BlockwiseInitializer(tf.keras.initializers.Initializer):
@@ -84,8 +84,8 @@ class BlockwiseInitializer(tf.keras.initializers.Initializer):
       if sum(sizes_) != n:
         raise ValueError(message)
     elif self.validate_args:
-      assertions.append(tf.compat.v1.assert_equal(
-          shape[-1], tf.reduce_sum(input_tensor=self.sizes), message=message))
+      assertions.append(tf.debugging.assert_equal(
+          shape[-1], tf.reduce_sum(self.sizes), message=message))
 
     s = (shape[:-1]
          if shape_ is None or any(s is None for s in shape_[:-1])
@@ -107,7 +107,7 @@ class BlockwiseInitializer(tf.keras.initializers.Initializer):
     """Returns initializer configuration as a JSON-serializable dict."""
     return {
         'initializers': [
-            tf.compat.v2.initializers.serialize(
+            tf.initializers.serialize(
                 tf.keras.initializers.get(init))
             for init in self.initializers
         ],
@@ -119,7 +119,7 @@ class BlockwiseInitializer(tf.keras.initializers.Initializer):
   def from_config(cls, config):
     """Instantiates an initializer from a configuration dictionary."""
     return cls(**{
-        'initializers': [tf.compat.v2.initializers.deserialize(init)
+        'initializers': [tf.initializers.deserialize(init)
                          for init in config.get('initializers', [])],
         'sizes': config.get('sizes', []),
         'validate_args': config.get('validate_args', False),

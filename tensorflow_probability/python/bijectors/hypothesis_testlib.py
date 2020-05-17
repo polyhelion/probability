@@ -148,7 +148,17 @@ def bijector_supports():
                           Support.SCALAR_POSITIVE),
       'Expm1':
           BijectorSupport(Support.SCALAR_UNCONSTRAINED, Support.SCALAR_GT_NEG1),
-      'Gumbel':
+      'FillScaleTriL':
+          BijectorSupport(Support.VECTOR_SIZE_TRIANGULAR,
+                          Support.MATRIX_LOWER_TRIL_POSITIVE_DEFINITE),
+      'FillTriangular':
+          BijectorSupport(
+              Support.VECTOR_SIZE_TRIANGULAR, Support.MATRIX_LOWER_TRIL),
+      'FrechetCDF':
+          # The domain is dependent on the `loc` parameter of FrechetCDF,
+          # hence is handled in the test harness.
+          BijectorSupport(Support.OTHER, Support.SCALAR_IN_0_1),
+      'GumbelCDF':
           BijectorSupport(Support.SCALAR_UNCONSTRAINED, Support.SCALAR_IN_0_1),
       'Identity':
           BijectorSupport(Support.SCALAR_UNCONSTRAINED,
@@ -161,8 +171,15 @@ def bijector_supports():
       'IteratedSigmoidCentered':
           BijectorSupport(Support.VECTOR_UNCONSTRAINED,
                           Support.VECTOR_WITH_L1_NORM_1_SIZE_GT1),
-      'Kumaraswamy':
+      'KumaraswamyCDF':
           BijectorSupport(Support.SCALAR_IN_0_1, Support.SCALAR_IN_0_1),
+      'Log':
+          BijectorSupport(
+              Support.SCALAR_POSITIVE, Support.SCALAR_UNCONSTRAINED),
+      'Log1p':
+          BijectorSupport(
+              Support.SCALAR_GT_NEG1, Support.SCALAR_UNCONSTRAINED),
+
       'MatrixInverseTriL':
           BijectorSupport(Support.MATRIX_LOWER_TRIL_POSITIVE_DEFINITE,
                           Support.MATRIX_LOWER_TRIL_POSITIVE_DEFINITE),
@@ -174,6 +191,9 @@ def bijector_supports():
       'Ordered':
           BijectorSupport(Support.VECTOR_STRICTLY_INCREASING,
                           Support.VECTOR_UNCONSTRAINED),
+      'Permute':
+          BijectorSupport(Support.VECTOR_UNCONSTRAINED,
+                          Support.VECTOR_UNCONSTRAINED),
       'PowerTransform':
           # The domain is dependent on the `power` parameter of PowerTransform,
           # hence is handled in the test harness.
@@ -183,11 +203,44 @@ def bijector_supports():
                           Support.SCALAR_UNCONSTRAINED),
       'Reciprocal':
           BijectorSupport(Support.SCALAR_NON_ZERO, Support.SCALAR_NON_ZERO),
+      'Reshape':
+          BijectorSupport(Support.SCALAR_UNCONSTRAINED,
+                          Support.SCALAR_UNCONSTRAINED),
+      'Scale':
+          BijectorSupport(Support.SCALAR_UNCONSTRAINED,
+                          Support.SCALAR_UNCONSTRAINED),
+      'ScaleMatvecDiag':
+          BijectorSupport(Support.VECTOR_UNCONSTRAINED,
+                          Support.VECTOR_UNCONSTRAINED),
+      'ScaleMatvecLU':
+          BijectorSupport(Support.VECTOR_UNCONSTRAINED,
+                          Support.VECTOR_UNCONSTRAINED),
+      'ScaleMatvecTriL':
+          BijectorSupport(Support.VECTOR_UNCONSTRAINED,
+                          Support.VECTOR_UNCONSTRAINED),
+      'ScaleTriL':
+          BijectorSupport(Support.VECTOR_SIZE_TRIANGULAR,
+                          Support.MATRIX_LOWER_TRIL_POSITIVE_DEFINITE),
+      'Shift':
+          BijectorSupport(Support.SCALAR_UNCONSTRAINED,
+                          Support.SCALAR_UNCONSTRAINED),
       'Sigmoid':
           BijectorSupport(Support.SCALAR_UNCONSTRAINED, Support.SCALAR_IN_0_1),
+      'Sinh':
+          BijectorSupport(Support.SCALAR_UNCONSTRAINED,
+                          Support.SCALAR_UNCONSTRAINED),
       'SinhArcsinh':
           BijectorSupport(Support.SCALAR_UNCONSTRAINED,
                           Support.SCALAR_UNCONSTRAINED),
+      'SoftClip':
+          BijectorSupport(Support.SCALAR_UNCONSTRAINED,
+                          Support.SCALAR_UNCONSTRAINED),
+      'Softfloor':
+          BijectorSupport(Support.SCALAR_UNCONSTRAINED,
+                          Support.SCALAR_UNCONSTRAINED),
+      'Softplus':
+          BijectorSupport(Support.SCALAR_UNCONSTRAINED,
+                          Support.SCALAR_POSITIVE),
       'Softsign':
           BijectorSupport(Support.SCALAR_UNCONSTRAINED,
                           Support.SCALAR_IN_NEG1_1),
@@ -200,7 +253,13 @@ def bijector_supports():
       'Tanh':
           BijectorSupport(Support.SCALAR_UNCONSTRAINED,
                           Support.SCALAR_IN_NEG1_1),
-      'Weibull':
+      'TransformDiagonal':
+          BijectorSupport(Support.MATRIX_UNCONSTRAINED,
+                          Support.OTHER),
+      'Transpose':
+          BijectorSupport(Support.SCALAR_UNCONSTRAINED,
+                          Support.SCALAR_UNCONSTRAINED),
+      'WeibullCDF':
           BijectorSupport(Support.SCALAR_NON_NEGATIVE, Support.SCALAR_IN_0_1),
   }
   missing_keys = set(instantiable_bijectors().keys()) - set(supports.keys())
@@ -334,4 +393,11 @@ def power_transform_constraint(power):
     if power == 0:
       return x
     return tf.math.softplus(x) - 1. / power
+  return constrain
+
+
+def frechet_constraint(loc):
+  """Maps `s` to [loc, inf)."""
+  def constrain(x):
+    return loc + tf.math.softplus(x)
   return constrain

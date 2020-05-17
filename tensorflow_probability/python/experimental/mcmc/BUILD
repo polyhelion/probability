@@ -35,9 +35,39 @@ py_library(
     srcs = ["__init__.py"],
     srcs_version = "PY2AND3",
     deps = [
+        ":elliptical_slice_sampler",
         ":nuts_autobatching",
-        ":nuts_unrolled",
+        ":particle_filter",
+        ":sample_sequential_monte_carlo",
         # tensorflow dep,
+    ],
+)
+
+py_library(
+    name = "elliptical_slice_sampler",
+    srcs = ["elliptical_slice_sampler.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        # numpy dep,
+        # tensorflow dep,
+        "//tensorflow_probability/python/mcmc:kernel",
+        "//tensorflow_probability/python/mcmc/internal",
+        "//tensorflow_probability/python/util",
+    ],
+)
+
+py_test(
+    name = "elliptical_slice_sampler_test",
+    size = "large",
+    timeout = "long",
+    srcs = ["elliptical_slice_sampler_test.py"],
+    shard_count = 6,
+    deps = [
+        ":elliptical_slice_sampler",
+        # numpy dep,
+        # tensorflow dep,
+        "//tensorflow_probability",
+        "//tensorflow_probability/python/internal:test_util",
     ],
 )
 
@@ -48,15 +78,16 @@ py_library(
     deps = [
         # numpy dep,
         # tensorflow dep,
-        "//tensorflow_probability/python/distributions",
         "//tensorflow_probability/python/experimental/auto_batching",
         "//tensorflow_probability/python/math",
         "//tensorflow_probability/python/mcmc",
+        "//tensorflow_probability/python/util:seed_stream",
     ],
 )
 
 py_library(
     name = "nuts_testlib",
+    testonly = 1,
     srcs = ["nuts_test.py"],
     srcs_version = "PY2AND3",
     deps = [
@@ -65,6 +96,7 @@ py_library(
         "//tensorflow_probability",
         "//tensorflow_probability/python/distributions/internal:statistical_testing",
         "//tensorflow_probability/python/experimental/auto_batching",
+        "//tensorflow_probability/python/internal:test_util",
     ],
 )
 
@@ -77,6 +109,7 @@ py_test(
     tags = ["nozapfhahn"],
     deps = [
         ":nuts_testlib",
+        "//tensorflow_probability/python/internal:test_util",
     ],
 )
 
@@ -89,62 +122,109 @@ py_test(
     tags = [
         "notap",
         "nozapfhahn",
-        "requires-gpu-sm35",
+        "requires-gpu-nvidia",
     ],
-    deps = [":nuts_testlib"],
+    deps = [
+        ":nuts_testlib",
+        "//tensorflow_probability/python/internal:test_util",
+    ],
+)
+
+py_test(
+    name = "nuts_xla_test_cpu",
+    size = "large",
+    srcs = ["nuts_xla_test.py"],
+    args = ["--test_device=cpu"],
+    main = "nuts_xla_test.py",
+    shard_count = 1,
+    tags = [
+        "nozapfhahn",
+    ],
+    deps = [
+        # numpy dep,
+        # tensorflow dep,
+        "//tensorflow_probability",
+        "//tensorflow_probability/python/experimental/mcmc",
+        "//tensorflow_probability/python/internal:test_util",
+#         "//third_party/tensorflow/compiler/jit:xla_cpu_jit",  # DisableOnExport
+    ],
+)
+
+py_test(
+    name = "nuts_xla_test_gpu",
+    size = "large",
+    srcs = ["nuts_xla_test.py"],
+    args = ["--test_device=gpu"],
+    main = "nuts_xla_test.py",
+    shard_count = 1,
+    tags = [
+        "nozapfhahn",
+        "requires-gpu-nvidia",
+    ],
+    deps = [
+        # numpy dep,
+        # tensorflow dep,
+        "//tensorflow_probability",
+        "//tensorflow_probability/python/experimental/mcmc",
+        "//tensorflow_probability/python/internal:test_util",
+#         "//third_party/tensorflow/compiler/jit:xla_cpu_jit",  # DisableOnExport
+    ],
 )
 
 py_library(
-    name = "nuts_unrolled",
-    srcs = ["nuts_unrolled.py"],
+    name = "particle_filter",
+    srcs = ["particle_filter.py"],
     srcs_version = "PY2AND3",
     deps = [
         # numpy dep,
         # tensorflow dep,
-        "//tensorflow_probability/python/distributions:seed_stream",
+        "//tensorflow_probability/python/internal:docstring_util",
         "//tensorflow_probability/python/internal:prefer_static",
-        "//tensorflow_probability/python/math:generic",
-        "//tensorflow_probability/python/mcmc:kernel",
-        "//tensorflow_probability/python/mcmc/internal:leapfrog_integrator",
+        "//tensorflow_probability/python/internal:tensor_util",
+        "//tensorflow_probability/python/internal:tensorshape_util",
+    ],
+)
+
+py_test(
+    name = "particle_filter_test",
+    size = "large",
+    srcs = ["particle_filter_test.py"],
+    deps = [
+        ":particle_filter",
+        # numpy dep,
+        # tensorflow dep,
+        "//tensorflow_probability",
+        "//tensorflow_probability/python/internal:test_util",
+#         "//third_party/tensorflow/compiler/jit:xla_cpu_jit",  # DisableOnExport
     ],
 )
 
 py_library(
-    name = "nuts_unrolled_testlib",
-    srcs = ["nuts_unrolled_test.py"],
+    name = "sample_sequential_monte_carlo",
+    srcs = ["sample_sequential_monte_carlo.py"],
     srcs_version = "PY2AND3",
     deps = [
-        # absl/testing:parameterized dep,
+        # numpy dep,
+        # tensorflow dep,
+        "//tensorflow_probability/python/internal:prefer_static",
+        "//tensorflow_probability/python/math:generic",
+        "//tensorflow_probability/python/mcmc/internal:util",
+        "//tensorflow_probability/python/util:seed_stream",
+    ],
+)
+
+py_test(
+    name = "sample_sequential_monte_carlo_test",
+    size = "medium",
+    timeout = "long",
+    srcs = ["sample_sequential_monte_carlo_test.py"],
+    shard_count = 2,
+    deps = [
+        # numpy dep,
         # tensorflow dep,
         "//tensorflow_probability",
         "//tensorflow_probability/python/distributions/internal:statistical_testing",
-        "//tensorflow_probability/python/internal:assert_util",
+        "//tensorflow_probability/python/internal:test_util",
+#         "//third_party/tensorflow/compiler/jit:xla_cpu_jit",  # DisableOnExport
     ],
-)
-
-py_test(
-    name = "nuts_unrolled_test",
-    size = "large",
-    srcs = ["nuts_unrolled_test.py"],
-    shard_count = 7,
-    srcs_version = "PY2AND3",
-    tags = ["nozapfhahn"],
-    deps = [
-        ":nuts_unrolled_testlib",
-    ],
-)
-
-py_test(
-    name = "nuts_unrolled_test_gpu",
-    size = "large",
-    srcs = ["nuts_unrolled_test.py"],
-    main = "nuts_unrolled_test.py",
-    shard_count = 7,
-    srcs_version = "PY2AND3",
-    tags = [
-        "notap",
-        "nozapfhahn",
-        "requires-gpu-sm35",
-    ],
-    deps = [":nuts_unrolled_testlib"],
 )

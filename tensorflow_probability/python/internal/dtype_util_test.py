@@ -18,17 +18,20 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-# Dependency imports
+import collections
 
+# Dependency imports
+from absl.testing import parameterized
 import numpy as np
 import tensorflow.compat.v2 as tf
 import tensorflow_probability as tfp
 
 from tensorflow_probability.python.internal import dtype_util
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import
+from tensorflow_probability.python.internal import test_util
 
 
-class DtypeUtilTest(tf.test.TestCase):
+@test_util.test_all_tf_execution_regimes
+class DtypeUtilTest(test_util.TestCase):
 
   def testIsInteger(self):
     self.assertFalse(dtype_util.is_integer(np.float64))
@@ -40,22 +43,60 @@ class DtypeUtilTest(tf.test.TestCase):
     self.assertEqual(tf.float32, dtype_util.common_dtype(lst))
     self.assertLen(lst, 2)
 
+  def testCommonDtypeAcceptsNone(self):
+    self.assertEqual(
+        tf.float16, dtype_util.common_dtype(
+            [None], dtype_hint=tf.float16))
+
+    x = tf.ones(3, tf.float16)
+    self.assertEqual(
+        tf.float16, dtype_util.common_dtype(
+            [x, None], dtype_hint=tf.float32))
+
+    fake_tensor = collections.namedtuple('fake_tensor', ['dtype'])
+    self.assertEqual(
+        tf.float16, dtype_util.common_dtype(
+            [fake_tensor(dtype=None), None, x], dtype_hint=tf.float32))
+
   def testCommonDtypeFromLinop(self):
     x = tf.linalg.LinearOperatorDiag(tf.ones(3, tf.float16))
     self.assertEqual(
         tf.float16, dtype_util.common_dtype([x], dtype_hint=tf.float32))
 
   def testCommonDtypeFromEdRV(self):
+    # Only test Edward2 if it's able to be imported (not possible in jax/numpy
+    # modes).
+    try:
+      ed = tfp.experimental.edward2
+    except AttributeError:
+      self.skipTest('No edward2 module present in jax/numpy modes.')
     # As in tensorflow_probability github issue #221
-    ed = tfp.edward2
     x = ed.Dirichlet(np.ones(3, dtype='float64'))
     self.assertEqual(
         tf.float64, dtype_util.common_dtype([x], dtype_hint=tf.float32))
 
+  @parameterized.named_parameters(
+      dict(testcase_name='Float32', dtype=tf.float32,
+           expected_minval=np.float32(-3.4028235e+38)),
+      dict(testcase_name='Float64', dtype=tf.float64,
+           expected_minval=np.float64(-1.7976931348623157e+308)),
+  )
+  def testMin(self, dtype, expected_minval):
+    self.assertEqual(dtype_util.min(dtype), expected_minval)
 
-class FloatDTypeTest(tf.test.TestCase):
+  @parameterized.named_parameters(
+      dict(testcase_name='Float32', dtype=tf.float32,
+           expected_maxval=np.float32(3.4028235e+38)),
+      dict(testcase_name='Float64', dtype=tf.float64,
+           expected_maxval=np.float64(1.7976931348623157e+308)),
+  )
+  def testMax(self, dtype, expected_maxval):
+    self.assertEqual(dtype_util.max(dtype), expected_maxval)
 
-  @test_util.run_in_graph_and_eager_modes
+
+@test_util.test_all_tf_execution_regimes
+class FloatDTypeTest(test_util.TestCase):
+
   def test_assert_same_float_dtype(self):
     self.assertIs(tf.float32, dtype_util.assert_same_float_dtype(None, None))
     self.assertIs(tf.float32, dtype_util.assert_same_float_dtype([], None))
@@ -76,6 +117,9 @@ class FloatDTypeTest(tf.test.TestCase):
     self.assertRaises(ValueError, dtype_util.assert_same_float_dtype,
                       [const_float], tf.int32)
 
+    if not hasattr(tf, 'SparseTensor'):
+      # No SparseTensor in numpy/jax mode.
+      return
     sparse_float = tf.SparseTensor(
         tf.constant([[111], [232]], tf.int64),
         tf.constant([23.4, -43.2], tf.float32),
@@ -105,6 +149,17 @@ class FloatDTypeTest(tf.test.TestCase):
                       [sparse_float, const_int], tf.float32)
     self.assertRaises(ValueError, dtype_util.assert_same_float_dtype,
                       [const_int])
+
+  def test_size(self):
+    self.assertEqual(dtype_util.size(tf.int32), 4)
+    self.assertEqual(dtype_util.size(tf.int64), 8)
+    self.assertEqual(dtype_util.size(tf.float32), 4)
+    self.assertEqual(dtype_util.size(tf.float64), 8)
+
+    self.assertEqual(dtype_util.size(np.int32), 4)
+    self.assertEqual(dtype_util.size(np.int64), 8)
+    self.assertEqual(dtype_util.size(np.float32), 4)
+    self.assertEqual(dtype_util.size(np.float64), 8)
 
 
 if __name__ == '__main__':

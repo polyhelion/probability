@@ -19,16 +19,16 @@ from __future__ import division
 from __future__ import print_function
 
 # Dependency imports
+
 import numpy as np
 import tensorflow.compat.v2 as tf
 from tensorflow_probability.python import bijectors as tfb
-
 from tensorflow_probability.python.bijectors import bijector_test_util
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
+from tensorflow_probability.python.internal import test_util
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class TanhBijectorTest(tf.test.TestCase):
+@test_util.test_all_tf_execution_regimes
+class TanhBijectorTest(test_util.TestCase):
   """Tests correctness of the Y = g(X) = tanh(X) transformation."""
 
   def testBijector(self):
@@ -52,7 +52,7 @@ class TanhBijectorTest(tf.test.TestCase):
 
   def testScalarCongruency(self):
     bijector_test_util.assert_scalar_congruency(
-        tfb.Tanh(), lower_x=-8., upper_x=8., eval_func=self.evaluate,
+        tfb.Tanh(), lower_x=-7., upper_x=7., eval_func=self.evaluate,
         n=int(10e4), rtol=.5)
 
   def testBijectiveAndFinite(self):

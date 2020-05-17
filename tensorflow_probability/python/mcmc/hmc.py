@@ -19,17 +19,17 @@ from __future__ import division
 from __future__ import print_function
 
 import collections
-# Dependency imports
 
-import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v1 as tf1
+import tensorflow.compat.v2 as tf
 
-from tensorflow_probability.python import distributions
-from tensorflow_probability.python.internal import distribution_util
+from tensorflow_probability.python.internal import dtype_util
+from tensorflow_probability.python.internal import prefer_static
 from tensorflow_probability.python.mcmc import kernel as kernel_base
 from tensorflow_probability.python.mcmc import metropolis_hastings
 from tensorflow_probability.python.mcmc.internal import leapfrog_integrator as leapfrog_impl
 from tensorflow_probability.python.mcmc.internal import util as mcmc_util
+from tensorflow_probability.python.util.seed_stream import SeedStream
 from tensorflow.python.util import deprecation  # pylint: disable=g-direct-tensorflow-import
 
 
@@ -46,6 +46,8 @@ UncalibratedHamiltonianMonteCarloKernelResults = collections.namedtuple(
         'log_acceptance_correction',
         'target_log_prob',        # For "next_state".
         'grads_target_log_prob',  # For "next_state".
+        'initial_momentum',
+        'final_momentum',
         'step_size',
         'num_leapfrog_steps',
     ])
@@ -104,9 +106,9 @@ def make_simple_step_size_update_policy(num_adaptation_steps,
       `step_size_var, kernel_results` and returns updated step size(s).
   """
   if step_counter is None and num_adaptation_steps is not None:
-    step_counter = tf.compat.v1.get_variable(
+    step_counter = tf1.get_variable(
         name='step_size_adaptation_step_counter',
-        initializer=np.array(-1, dtype=np.int32),
+        initializer=tf.constant(-1, dtype=tf.int32),
         # Specify the dtype for variable sharing to work correctly
         # (b/120599991).
         dtype=tf.int32,
@@ -133,11 +135,11 @@ def make_simple_step_size_update_policy(num_adaptation_steps,
       return tf.identity(step_size_var)
     log_n = tf.math.log(
         tf.cast(
-            tf.size(input=kernel_results.log_accept_ratio),
+            tf.size(kernel_results.log_accept_ratio),
             kernel_results.log_accept_ratio.dtype))
     log_mean_accept_ratio = tf.reduce_logsumexp(
-        input_tensor=tf.minimum(kernel_results.log_accept_ratio, 0.)) - log_n
-    adjustment = tf.compat.v1.where(
+        tf.minimum(kernel_results.log_accept_ratio, 0.)) - log_n
+    adjustment = tf.where(
         log_mean_accept_ratio < tf.cast(
             tf.math.log(target_rate), log_mean_accept_ratio.dtype),
         -decrement_multiplier / (1. + decrement_multiplier),
@@ -277,7 +279,7 @@ class HamiltonianMonteCarlo(kernel_base.TransitionKernel):
   def make_weights_prior(dims, log_sigma):
     return tfd.MultivariateNormalDiag(
         loc=tf.zeros([dims], dtype=log_sigma.dtype),
-        scale_identity_multiplier=tf.exp(log_sigma))
+        scale_identity_multiplier=tf.math.exp(log_sigma))
 
   def make_response_likelihood(w, x):
     if w.shape.ndims == 1:
@@ -290,17 +292,16 @@ class HamiltonianMonteCarlo(kernel_base.TransitionKernel):
   dtype = np.float32
   num_samples = 500
   dims = 10
-  tf.compat.v1.random.set_random_seed(10014)
+  tf.random.set_seed(10014)
   np.random.seed(10014)
 
   weights_prior_true_scale = np.array(0.3, dtype)
   y, x, _ = make_training_data(
       num_samples, dims, weights_prior_true_scale)
 
-  log_sigma = tf.compat.v2.Variable(
-      name='log_sigma', initial_value=np.array(0, dtype))
+  log_sigma = tf.Variable(0., dtype=dtype, name='log_sigma')
 
-  optimizer = tf.compat.v2.optimizers.SGD(learning_rate=0.01)
+  optimizer = tf.optimizers.SGD(learning_rate=0.01)
 
   @tf.function
   def mcem_iter(weights_chain_start, step_size):
@@ -312,8 +313,7 @@ class HamiltonianMonteCarlo(kernel_base.TransitionKernel):
         likelihood = make_response_likelihood(w, x)
         return (
             prior.log_prob(w) +
-            tf.reduce_sum(
-                input_tensor=likelihood.log_prob(y), axis=-1))  # [m]
+            tf.reduce_sum(likelihood.log_prob(y), axis=-1))  # [m]
 
       def trace_fn(_, pkr):
         return (
@@ -341,15 +341,15 @@ class HamiltonianMonteCarlo(kernel_base.TransitionKernel):
 
       # We do an optimization step to propagate `log_sigma` after two HMC
       # steps to propagate `weights`.
-      loss = -tf.reduce_mean(input_tensor=target_log_prob)
+      loss = -tf.reduce_mean(target_log_prob)
 
-    avg_acceptance_ratio = tf.reduce_mean(
-        input_tensor=tf.exp(tf.minimum(log_accept_ratio, 0.)))
+    avg_acceptance_ratio = tf.math.exp(
+        tfp.math.reduce_logmeanexp(tf.minimum(log_accept_ratio, 0.)))
 
     optimizer.apply_gradients(
         [[tape.gradient(loss, log_sigma), log_sigma]])
 
-    weights_prior_estimated_scale = tf.exp(log_sigma)
+    weights_prior_estimated_scale = tf.math.exp(log_sigma)
     return (weights_prior_estimated_scale, weights[-1], loss,
             step_size[-1], avg_acceptance_ratio)
 
@@ -441,20 +441,20 @@ class HamiltonianMonteCarlo(kernel_base.TransitionKernel):
       raise ValueError('It is invalid to simultaneously specify '
                        '`step_size_update_fn` and set '
                        '`store_parameters_in_results` to `True`.')
-    impl = metropolis_hastings.MetropolisHastings(
+    self._seed_stream = SeedStream(seed, salt='hmc')
+    self._impl = metropolis_hastings.MetropolisHastings(
         inner_kernel=UncalibratedHamiltonianMonteCarlo(
             target_log_prob_fn=target_log_prob_fn,
             step_size=step_size,
             num_leapfrog_steps=num_leapfrog_steps,
             state_gradients_are_stopped=state_gradients_are_stopped,
-            seed=seed,
-            name='hmc_kernel' if name is None else name,
+            seed=self._seed_stream(),
+            name=name or 'hmc_kernel',
             store_parameters_in_results=store_parameters_in_results),
-        seed=seed)
-    parameters = impl.inner_kernel.parameters.copy()
-    parameters['step_size_update_fn'] = step_size_update_fn
-    self._impl = impl
-    self._parameters = parameters
+        seed=self._seed_stream())
+    self._parameters = self._impl.inner_kernel.parameters.copy()
+    self._parameters['step_size_update_fn'] = step_size_update_fn
+    self._parameters['seed'] = seed
 
   @property
   def target_log_prob_fn(self):
@@ -538,8 +538,8 @@ class HamiltonianMonteCarlo(kernel_base.TransitionKernel):
         `current_state`.
     """
     previous_step_size_assign = (
-        [] if self.step_size_update_fn is None
-        else (previous_kernel_results.extra.step_size_assign
+        [] if self.step_size_update_fn is None  # pylint: disable=g-long-ternary
+        else (previous_kernel_results.extra.step_size_assign  # pylint: disable=g-long-ternary
               if mcmc_util.is_list_like(
                   previous_kernel_results.extra.step_size_assign)
               else [previous_kernel_results.extra.step_size_assign]))
@@ -617,11 +617,11 @@ class UncalibratedHamiltonianMonteCarlo(kernel_base.TransitionKernel):
       # TODO(b/68017812): Re-enable once TFE supports `tf.random_shuffle` seed.
       raise NotImplementedError('Specifying a `seed` when running eagerly is '
                                 'not currently supported. To run in Eager '
-                                'mode with a seed, use `tf.set_random_seed`.')
-    self._seed_stream = distributions.SeedStream(seed, 'hmc_one_step')
+                                'mode with a seed, use `tf.random.set_seed`.')
     if not store_parameters_in_results:
       mcmc_util.warn_if_parameters_are_not_simple_tensors(
           dict(step_size=step_size, num_leapfrog_steps=num_leapfrog_steps))
+    self._seed_stream = SeedStream(seed, salt='uncalibrated_hmc_one_step')
     self._parameters = dict(
         target_log_prob_fn=target_log_prob_fn,
         step_size=step_size,
@@ -694,8 +694,7 @@ class UncalibratedHamiltonianMonteCarlo(kernel_base.TransitionKernel):
 
   @mcmc_util.set_doc(HamiltonianMonteCarlo.one_step.__doc__)
   def one_step(self, current_state, previous_kernel_results):
-    with tf.compat.v2.name_scope(
-        mcmc_util.make_name(self.name, 'hmc', 'one_step')):
+    with tf.name_scope(mcmc_util.make_name(self.name, 'hmc', 'one_step')):
       if self._store_parameters_in_results:
         step_size = previous_kernel_results.step_size
         num_leapfrog_steps = previous_kernel_results.num_leapfrog_steps
@@ -721,8 +720,8 @@ class UncalibratedHamiltonianMonteCarlo(kernel_base.TransitionKernel):
       for x in current_state_parts:
         current_momentum_parts.append(
             tf.random.normal(
-                shape=tf.shape(input=x),
-                dtype=self._momentum_dtype or x.dtype.base_dtype,
+                shape=tf.shape(x),
+                dtype=self._momentum_dtype or dtype_util.base_dtype(x.dtype),
                 seed=self._seed_stream()))
 
       integrator = leapfrog_impl.SimpleLeapfrogIntegrator(
@@ -743,8 +742,7 @@ class UncalibratedHamiltonianMonteCarlo(kernel_base.TransitionKernel):
       def maybe_flatten(x):
         return x if mcmc_util.is_list_like(current_state) else x[0]
 
-      independent_chain_ndims = distribution_util.prefer_static_rank(
-          current_target_log_prob)
+      independent_chain_ndims = prefer_static.rank(current_target_log_prob)
 
       new_kernel_results = previous_kernel_results._replace(
           log_acceptance_correction=_compute_log_acceptance_correction(
@@ -752,20 +750,19 @@ class UncalibratedHamiltonianMonteCarlo(kernel_base.TransitionKernel):
               independent_chain_ndims),
           target_log_prob=next_target_log_prob,
           grads_target_log_prob=next_target_log_prob_grad_parts,
+          initial_momentum=current_momentum_parts,
+          final_momentum=next_momentum_parts,
       )
 
       return maybe_flatten(next_state_parts), new_kernel_results
 
   @mcmc_util.set_doc(HamiltonianMonteCarlo.bootstrap_results.__doc__)
   def bootstrap_results(self, init_state):
-    with tf.compat.v2.name_scope(
+    with tf.name_scope(
         mcmc_util.make_name(self.name, 'hmc', 'bootstrap_results')):
-      if not mcmc_util.is_list_like(init_state):
-        init_state = [init_state]
+      init_state, _ = mcmc_util.prepare_state_parts(init_state)
       if self.state_gradients_are_stopped:
         init_state = [tf.stop_gradient(x) for x in init_state]
-      else:
-        init_state = [tf.convert_to_tensor(value=x) for x in init_state]
       [
           init_target_log_prob,
           init_grads_target_log_prob,
@@ -775,14 +772,24 @@ class UncalibratedHamiltonianMonteCarlo(kernel_base.TransitionKernel):
             log_acceptance_correction=tf.zeros_like(init_target_log_prob),
             target_log_prob=init_target_log_prob,
             grads_target_log_prob=init_grads_target_log_prob,
+            initial_momentum=tf.nest.map_structure(
+                tf.zeros_like, init_state),
+            final_momentum=tf.nest.map_structure(
+                tf.zeros_like, init_state),
+            # TODO(b/142590314): Try to use the following code once we commit to
+            # a tensorization policy.
+            # step_size=mcmc_util.prepare_state_parts(
+            #    self.step_size,
+            #    dtype=init_target_log_prob.dtype,
+            #    name='step_size')[0],
             step_size=tf.nest.map_structure(
                 lambda x: tf.convert_to_tensor(  # pylint: disable=g-long-lambda
-                    value=x,
+                    x,
                     dtype=init_target_log_prob.dtype,
                     name='step_size'),
                 self.step_size),
             num_leapfrog_steps=tf.convert_to_tensor(
-                value=self.num_leapfrog_steps,
+                self.num_leapfrog_steps,
                 dtype=tf.int32,
                 name='num_leapfrog_steps'))
       else:
@@ -790,6 +797,10 @@ class UncalibratedHamiltonianMonteCarlo(kernel_base.TransitionKernel):
             log_acceptance_correction=tf.zeros_like(init_target_log_prob),
             target_log_prob=init_target_log_prob,
             grads_target_log_prob=init_grads_target_log_prob,
+            initial_momentum=tf.nest.map_structure(
+                tf.zeros_like, init_state),
+            final_momentum=tf.nest.map_structure(
+                tf.zeros_like, init_state),
             step_size=[],
             num_leapfrog_steps=[]
         )
@@ -873,20 +884,12 @@ def _compute_log_acceptance_correction(current_momentums,
     log_acceptance_correction: `Tensor` representing the `log`
       acceptance-correction.  (See docstring for mathematical definition.)
   """
-  with tf.compat.v2.name_scope(name or 'compute_log_acceptance_correction'):
-    log_current_kinetic, log_proposed_kinetic = [], []
-    for current_momentum, proposed_momentum in zip(
-        current_momentums, proposed_momentums):
-      axis = tf.range(independent_chain_ndims, tf.rank(current_momentum))
-      log_current_kinetic.append(_log_sum_sq(current_momentum, axis))
-      log_proposed_kinetic.append(_log_sum_sq(proposed_momentum, axis))
-    current_kinetic = 0.5 * tf.exp(
-        tf.reduce_logsumexp(
-            input_tensor=tf.stack(log_current_kinetic, axis=-1), axis=-1))
-    proposed_kinetic = 0.5 * tf.exp(
-        tf.reduce_logsumexp(
-            input_tensor=tf.stack(log_proposed_kinetic, axis=-1), axis=-1))
-    return mcmc_util.safe_sum([current_kinetic, -proposed_kinetic])
+  with tf.name_scope(name or 'compute_log_acceptance_correction'):
+    sum_sq = lambda v: tf.reduce_sum(v**2., axis=prefer_static.range(  # pylint: disable=g-long-lambda
+        independent_chain_ndims, prefer_static.rank(v)))
+    current_kinetic = tf.add_n([sum_sq(v) for v in current_momentums])
+    proposed_kinetic = tf.add_n([sum_sq(v) for v in proposed_momentums])
+    return 0.5 * mcmc_util.safe_sum([current_kinetic, -proposed_kinetic])
 
 
 def _prepare_args(target_log_prob_fn,
@@ -897,24 +900,13 @@ def _prepare_args(target_log_prob_fn,
                   maybe_expand=False,
                   state_gradients_are_stopped=False):
   """Helper which processes input args to meet list-like assumptions."""
-  state_parts = list(state) if mcmc_util.is_list_like(state) else [state]
-  state_parts = [
-      tf.convert_to_tensor(value=s, name='current_state') for s in state_parts
-  ]
+  state_parts, _ = mcmc_util.prepare_state_parts(state, name='current_state')
   if state_gradients_are_stopped:
     state_parts = [tf.stop_gradient(x) for x in state_parts]
   target_log_prob, grads_target_log_prob = mcmc_util.maybe_call_fn_and_grads(
-      target_log_prob_fn,
-      state_parts,
-      target_log_prob,
-      grads_target_log_prob)
-  step_sizes = (list(step_size) if mcmc_util.is_list_like(step_size)
-                else [step_size])
-  step_sizes = [
-      tf.convert_to_tensor(
-          value=s, name='step_size', dtype=target_log_prob.dtype)
-      for s in step_sizes
-  ]
+      target_log_prob_fn, state_parts, target_log_prob, grads_target_log_prob)
+  step_sizes, _ = mcmc_util.prepare_state_parts(
+      step_size, dtype=target_log_prob.dtype, name='step_size')
   if len(step_sizes) == 1:
     step_sizes *= len(state_parts)
   if len(state_parts) != len(step_sizes):
@@ -928,9 +920,3 @@ def _prepare_args(target_log_prob_fn,
       target_log_prob,
       grads_target_log_prob,
   ]
-
-
-def _log_sum_sq(x, axis=None):
-  """Computes log(sum(x**2))."""
-  return tf.reduce_logsumexp(
-      input_tensor=2. * tf.math.log(tf.abs(x)), axis=axis)

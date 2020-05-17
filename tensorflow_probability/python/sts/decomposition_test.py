@@ -15,23 +15,25 @@
 """Tests for STS decomposition methods."""
 
 # Dependency imports
-import numpy as np
-import tensorflow as tf
-import tensorflow_probability as tfp
 
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import
+import numpy as np
+import tensorflow.compat.v1 as tf1
+import tensorflow.compat.v2 as tf
+import tensorflow_probability as tfp
+from tensorflow_probability.python.internal import test_util
+
 
 tfl = tf.linalg
-tfd = tfp.distributions
 
 
-class _DecompositionTest(tf.test.TestCase):
+class _DecompositionTest(test_util.TestCase):
 
   def _build_model_and_params(self,
                               num_timesteps,
                               param_batch_shape,
                               num_posterior_draws=10):
-
+    seed = test_util.test_seed_stream()
+    np.random.seed(seed() % (2**32))
     observed_time_series = self._build_tensor(
         np.random.randn(*(param_batch_shape +
                           [num_timesteps])))
@@ -48,7 +50,7 @@ class _DecompositionTest(tf.test.TestCase):
                         observed_time_series=observed_time_series)
 
     # Sample test params from the prior (faster than posterior samples).
-    param_samples = [p.prior.sample([num_posterior_draws])
+    param_samples = [p.prior.sample([num_posterior_draws], seed=seed())
                      for p in model.parameters]
 
     return model, observed_time_series, param_samples
@@ -128,7 +130,7 @@ class _DecompositionTest(tf.test.TestCase):
       # If input shapes are static, result shapes should be too.
       return tensor.shape.as_list()
     else:
-      return self.evaluate(tf.shape(input=tensor))
+      return self.evaluate(tf.shape(tensor))
 
   def _build_tensor(self, ndarray):
     """Convert a numpy array to a TF placeholder.
@@ -143,11 +145,11 @@ class _DecompositionTest(tf.test.TestCase):
     """
 
     ndarray = np.asarray(ndarray).astype(self.dtype)
-    return tf.compat.v1.placeholder_with_default(
-        input=ndarray, shape=ndarray.shape if self.use_static_shape else None)
+    return tf1.placeholder_with_default(
+        ndarray, shape=ndarray.shape if self.use_static_shape else None)
 
 
-@test_util.run_all_in_graph_and_eager_modes
+@test_util.test_all_tf_execution_regimes
 class DecompositionTestStatic32(_DecompositionTest):
   dtype = np.float32
   use_static_shape = True

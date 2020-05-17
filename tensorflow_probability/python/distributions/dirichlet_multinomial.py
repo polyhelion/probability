@@ -23,15 +23,17 @@ import tensorflow.compat.v2 as tf
 from tensorflow_probability.python import math as tfp_math
 from tensorflow_probability.python.distributions import distribution
 from tensorflow_probability.python.distributions import multinomial
-from tensorflow_probability.python.distributions import seed_stream
 from tensorflow_probability.python.internal import assert_util
 from tensorflow_probability.python.internal import distribution_util
 from tensorflow_probability.python.internal import dtype_util
 from tensorflow_probability.python.internal import reparameterization
+from tensorflow_probability.python.internal import samplers
+from tensorflow_probability.python.internal import tensor_util
 from tensorflow_probability.python.internal import tensorshape_util
 
+
 __all__ = [
-    "DirichletMultinomial",
+    'DirichletMultinomial',
 ]
 
 
@@ -92,11 +94,11 @@ class DirichletMultinomial(distribution.Distribution):
     2. Draw integers:
        `counts = [n_0,...,n_{K-1}] ~ Multinomial(total_count, probs)`
 
-  The last `concentration` dimension parametrizes a single Dirichlet-Multinomial
-  distribution. When calling distribution functions (e.g., `dist.prob(counts)`),
-  `concentration`, `total_count` and `counts` are broadcast to the same shape.
-  The last dimension of `counts` corresponds single Dirichlet-Multinomial
-  distributions.
+  The last `concentration` dimension parameterizes a single
+  Dirichlet-Multinomial distribution. When calling distribution functions
+  (e.g., `dist.prob(counts)`), `concentration`, `total_count` and `counts` are
+  broadcast to the same shape. The last dimension of `counts` corresponds to
+  single Dirichlet-Multinomial distributions.
 
   Distribution parameters are automatically broadcast in all functions; see
   examples for details.
@@ -104,6 +106,7 @@ class DirichletMultinomial(distribution.Distribution):
   #### Pitfalls
 
   The number of classes, `K`, must not exceed:
+
   - the largest integer representable by `self.dtype`, i.e.,
     `2**(mantissa_bits+1)` (IEE754),
   - the maximum `Tensor` index, i.e., `2**31-1`.
@@ -159,35 +162,32 @@ class DirichletMultinomial(distribution.Distribution):
 
   """
 
-  # TODO(b/27419586) Change docstring for dtype of concentration once int
-  # allowed.
   def __init__(self,
                total_count,
                concentration,
                validate_args=False,
                allow_nan_stats=True,
-               name="DirichletMultinomial"):
+               name='DirichletMultinomial'):
     """Initialize a batch of DirichletMultinomial distributions.
 
     Args:
-      total_count:  Non-negative floating point tensor, whose dtype is the same
+      total_count: Non-negative integer-valued tensor, whose dtype is the same
         as `concentration`. The shape is broadcastable to `[N1,..., Nm]` with
         `m >= 0`. Defines this as a batch of `N1 x ... x Nm` different
         Dirichlet multinomial distributions. Its components should be equal to
         integer values.
-      concentration: Positive floating point tensor, whose dtype is the
-        same as `n` with shape broadcastable to `[N1,..., Nm, K]` `m >= 0`.
-        Defines this as a batch of `N1 x ... x Nm` different `K` class Dirichlet
-        multinomial distributions.
+      concentration: Positive floating point tensor with shape broadcastable to
+        `[N1,..., Nm, K]` `m >= 0`.  Defines this as a batch of `N1 x ... x Nm`
+        different `K` class Dirichlet multinomial distributions.
       validate_args: Python `bool`, default `False`. When `True` distribution
         parameters are checked for validity despite possibly degrading runtime
         performance. When `False` invalid inputs may silently render incorrect
         outputs.
-      allow_nan_stats: Python `bool`, default `True`. When `True`, statistics
-        (e.g., mean, mode, variance) use the value "`NaN`" to indicate the
-        result is undefined. When `False`, an exception is raised if one or
-        more of the statistic's batch members are undefined.
-      name: Python `str` name prefixed to Ops created by this class.
+     allow_nan_stats: Python `bool`, default `True`. When `True`, statistics
+        (e.g., mean, variance) use the value "`NaN`" to indicate the result is
+        undefined. When `False`, an exception is raised if one or more of the
+        statistic's batch members are undefined.
+     name: Python `str` name prefixed to Ops created by this class.
     """
     # Broadcasting works because:
     # * The broadcasting convention is to prepend dimensions of size [1], and
@@ -202,26 +202,18 @@ class DirichletMultinomial(distribution.Distribution):
     parameters = dict(locals())
     with tf.name_scope(name) as name:
       dtype = dtype_util.common_dtype([total_count, concentration], tf.float32)
-      self._total_count = tf.convert_to_tensor(
-          total_count, name="total_count", dtype=dtype)
-      if validate_args:
-        self._total_count = (
-            distribution_util.embed_check_nonnegative_integer_form(
-                self._total_count))
-      self._concentration = self._maybe_assert_valid_concentration(
-          tf.convert_to_tensor(
-              concentration, name="concentration", dtype=dtype), validate_args)
-      self._total_concentration = tf.reduce_sum(self._concentration, axis=-1)
-      self._broadcasted_concentration = tf.ones_like(
-          self._total_count[..., tf.newaxis]) * self._concentration
-    super(DirichletMultinomial, self).__init__(
-        dtype=dtype,
-        validate_args=validate_args,
-        allow_nan_stats=allow_nan_stats,
-        reparameterization_type=reparameterization.NOT_REPARAMETERIZED,
-        parameters=parameters,
-        graph_parents=[self._total_count, self._concentration],
-        name=name)
+      self._total_count = tensor_util.convert_nonref_to_tensor(
+          total_count, dtype=dtype, name='total_count')
+      self._concentration = tensor_util.convert_nonref_to_tensor(
+          concentration, name='concentration')
+
+      super(DirichletMultinomial, self).__init__(
+          dtype=dtype,
+          validate_args=validate_args,
+          allow_nan_stats=allow_nan_stats,
+          reparameterization_type=reparameterization.NOT_REPARAMETERIZED,
+          parameters=parameters,
+          name=name)
 
   @classmethod
   def _params_event_ndims(cls):
@@ -237,47 +229,74 @@ class DirichletMultinomial(distribution.Distribution):
     """Concentration parameter; expected prior counts for that coordinate."""
     return self._concentration
 
-  @property
-  def total_concentration(self):
-    """Sum of last dim of concentration parameter."""
-    return self._total_concentration
+  def compute_total_concentration(self):
+    """Compute and return the sum of last dim of concentration parameter."""
+    with self._name_and_control_scope('compute_total_concentration'):
+      return self._compute_total_concentration()
 
-  def _batch_shape_tensor(self):
-    return tf.shape(self._broadcasted_concentration)[:-1]
+  def _compute_total_concentration(self, concentration=None):
+    if concentration is None:
+      concentration = tf.convert_to_tensor(self._concentration)
+    return tf.reduce_sum(concentration, axis=-1)
+
+  def _batch_shape_tensor(self, concentration=None, total_count=None):
+    if concentration is None:
+      concentration = tf.convert_to_tensor(self._concentration)
+    if total_count is None:
+      total_count = tf.convert_to_tensor(self._total_count)
+    return tf.broadcast_dynamic_shape(
+        tf.shape(total_count[..., tf.newaxis]),
+        tf.shape(concentration))[:-1]
 
   def _batch_shape(self):
     return tensorshape_util.with_rank_at_least(
-        self._broadcasted_concentration.shape, 1)[:-1]
+        tf.broadcast_static_shape(
+            tf.TensorShape(self._total_count.shape).concatenate([1]),
+            tf.TensorShape(self._concentration.shape)),
+        1)[:-1]
 
-  def _event_shape_tensor(self):
+  def _event_shape_tensor(self, concentration=None):
+    if concentration is None:
+      concentration = tf.convert_to_tensor(self.concentration)
     # Event shape depends only on concentration, not total_count.
-    return tf.shape(self.concentration)[-1:]
+    return tf.shape(concentration)[-1:]
 
   def _event_shape(self):
     # Event shape depends only on concentration, not total_count.
-    return tensorshape_util.with_rank_at_least(self.concentration.shape, 1)[-1:]
+    return tensorshape_util.with_rank(self.concentration.shape[-1:], rank=1)
 
   def _sample_n(self, n, seed=None):
-    seed = seed_stream.SeedStream(seed, "dirichlet_multinomial")
-    n_draws = tf.cast(self.total_count, dtype=tf.int32)
-    k = self.event_shape_tensor()[0]
+    gamma_seed, multinomial_seed = samplers.split_seed(
+        seed, salt='dirichlet_multinomial')
+
+    concentration = tf.convert_to_tensor(self._concentration)
+    total_count = tf.convert_to_tensor(self._total_count)
+
+    n_draws = tf.cast(total_count, dtype=tf.int32)
+    k = self._event_shape_tensor(concentration)[0]
+    alpha = tf.math.multiply(
+        tf.ones_like(total_count[..., tf.newaxis]),
+        concentration,
+        name='alpha')
+
     unnormalized_logits = tf.math.log(
-        tf.random.gamma(
+        samplers.gamma(
             shape=[n],
-            alpha=self._broadcasted_concentration,
+            alpha=alpha,
             dtype=self.dtype,
-            seed=seed()))
+            seed=gamma_seed))
     x = multinomial.draw_sample(
-        1, k, unnormalized_logits, n_draws, self.dtype, seed())
-    final_shape = tf.concat([[n], self.batch_shape_tensor(), [k]], 0)
+        1, k, unnormalized_logits, n_draws, self.dtype, multinomial_seed)
+    final_shape = tf.concat(
+        [[n], self._batch_shape_tensor(concentration, total_count), [k]], 0)
     return tf.reshape(x, final_shape)
 
   @distribution_util.AppendDocstring(_dirichlet_multinomial_sample_note)
   def _log_prob(self, counts):
-    counts = self._maybe_assert_valid_sample(counts)
+    concentration = tf.convert_to_tensor(self.concentration)
     ordered_prob = (
-        tf.math.lbeta(self.concentration + counts) -
-        tf.math.lbeta(self.concentration))
+        tf.math.lbeta(concentration + counts) -
+        tf.math.lbeta(concentration))
     return ordered_prob + tfp_math.log_combinations(
         self.total_count, counts)
 
@@ -285,10 +304,16 @@ class DirichletMultinomial(distribution.Distribution):
   def _prob(self, counts):
     return tf.exp(self._log_prob(counts))
 
-  def _mean(self):
-    scaled_concentration = (self.concentration /
-                            self.total_concentration[..., tf.newaxis])
-    return self.total_count[..., tf.newaxis] * scaled_concentration
+  def _mean(self, total_count=None, concentration=None):
+    if total_count is None:
+      total_count = tf.convert_to_tensor(self._total_count)
+    if concentration is None:
+      concentration = tf.convert_to_tensor(self._concentration)
+
+    total_concentration = self._compute_total_concentration(concentration)
+    scaled_concentration = (
+        concentration / total_concentration[..., tf.newaxis])
+    return total_count[..., tf.newaxis] * scaled_concentration
 
   @distribution_util.AppendDocstring(
       """The covariance for each batch member is defined as the following:
@@ -309,42 +334,71 @@ class DirichletMultinomial(distribution.Distribution):
       ```
       """)
   def _covariance(self):
-    x = self._variance_scale_term() * self._mean()
+    total_count = tf.convert_to_tensor(self._total_count)
+    concentration = tf.convert_to_tensor(self._concentration)
+
+    scale = self._variance_scale_term(total_count, concentration)
+    x = scale * self._mean(total_count, concentration)
+
     return tf.linalg.set_diag(
         -tf.matmul(x[..., tf.newaxis], x[..., tf.newaxis, :]),  # outer prod
-        self._variance())
+        self._variance(total_count, concentration))
 
-  def _variance(self):
-    scale = self._variance_scale_term()
-    x = scale * self._mean()
-    return x * (self.total_count[..., tf.newaxis] * scale - x)
+  def _variance(self, total_count=None, concentration=None):
+    if total_count is None:
+      total_count = tf.convert_to_tensor(self._total_count)
+    if concentration is None:
+      concentration = tf.convert_to_tensor(self._concentration)
 
-  def _variance_scale_term(self):
+    scale = self._variance_scale_term(total_count, concentration)
+    x = scale * self._mean(total_count, concentration)
+    return x * (total_count[..., tf.newaxis] * scale - x)
+
+  def _variance_scale_term(self, total_count=None, concentration=None):
     """Helper to `_covariance` and `_variance` which computes a shared scale."""
+    if total_count is None:
+      total_count = tf.convert_to_tensor(self._total_count)
+    if concentration is None:
+      concentration = tf.convert_to_tensor(self._concentration)
+
     # Expand back the last dim so the shape of _variance_scale_term matches the
     # shape of self.concentration.
-    c0 = self.total_concentration[..., tf.newaxis]
-    return tf.sqrt((1. + c0 / self.total_count[..., tf.newaxis]) / (1. + c0))
+    c0 = self._compute_total_concentration(concentration)[..., tf.newaxis]
+    return tf.sqrt((1. + c0 / total_count[..., tf.newaxis]) / (1. + c0))
 
-  def _maybe_assert_valid_concentration(self, concentration, validate_args):
-    """Checks the validity of the concentration parameter."""
-    if not validate_args:
-      return concentration
-    concentration = distribution_util.embed_check_categorical_event_shape(
-        concentration)
-    return distribution_util.with_dependencies([
-        assert_util.assert_positive(
-            concentration, message="Concentration parameter must be positive."),
-    ], concentration)
+  def _default_event_space_bijector(self):
+    return
 
-  def _maybe_assert_valid_sample(self, counts):
-    """Check counts for proper shape, values, then return tensor version."""
+  def _sample_control_dependencies(self, x):
+    """Checks the validity of a sample."""
+    assertions = []
     if not self.validate_args:
-      return counts
-    counts = distribution_util.embed_check_nonnegative_integer_form(counts)
-    return distribution_util.with_dependencies([
-        assert_util.assert_equal(
-            self.total_count,
-            tf.reduce_sum(counts, axis=-1),
-            message="counts last-dimension must sum to `self.total_count`"),
-    ], counts)
+      return assertions
+    assertions.extend(distribution_util.assert_nonnegative_integer_form(x))
+    assertions.append(assert_util.assert_equal(
+        self.total_count,
+        tf.reduce_sum(x, axis=-1),
+        message='counts last-dimension must sum to `self.total_count`'))
+    return assertions
+
+  def _parameter_control_dependencies(self, is_init):
+    assertions = []
+
+    if is_init and self.validate_args:
+      # assert_categorical_event_shape handles both the static and dynamic case.
+      assertions.extend(
+          distribution_util.assert_categorical_event_shape(self._concentration))
+
+    if is_init != tensor_util.is_ref(self._total_count):
+      if self.validate_args:
+        assertions.extend(
+            distribution_util.assert_nonnegative_integer_form(
+                self._total_count))
+
+    if is_init != tensor_util.is_ref(self._concentration):
+      if self.validate_args:
+        assertions.append(
+            assert_util.assert_positive(
+                self._concentration,
+                message='Concentration parameter must be positive.'))
+    return assertions

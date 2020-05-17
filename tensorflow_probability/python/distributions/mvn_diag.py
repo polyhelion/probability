@@ -20,11 +20,12 @@ from __future__ import print_function
 
 import tensorflow.compat.v2 as tf
 from tensorflow_probability.python.distributions import mvn_linear_operator
-from tensorflow_probability.python.internal import distribution_util
-
+from tensorflow_probability.python.internal import dtype_util
+from tensorflow_probability.python.internal import tensor_util
+from tensorflow.python.util import deprecation  # pylint: disable=g-direct-tensorflow-import
 
 __all__ = [
-    "MultivariateNormalDiag",
+    'MultivariateNormalDiag',
 ]
 
 
@@ -33,7 +34,7 @@ class MultivariateNormalDiag(
   """The multivariate normal distribution on `R^k`.
 
   The Multivariate Normal distribution is defined over `R^k` and parameterized
-  by a (batch of) length-`k` `loc` vector (aka "mu") and a (batch of) `k x k`
+  by a (batch of) length-`k` `loc` vector (aka 'mu') and a (batch of) `k x k`
   `scale` matrix; `covariance = scale @ scale.T` where `@` denotes
   matrix-multiplication.
 
@@ -119,7 +120,7 @@ class MultivariateNormalDiag(
   # Initialize a 2-batch of 3-variate Gaussians.
   mvn = tfd.MultivariateNormalDiag(
       loc=[[1., 2, 3],
-           [11, 22, 33]]           # shape: [2, 3]
+           [11, 22, 33]],           # shape: [2, 3]
       scale_diag=[[1., 2, 3],
                   [0.5, 1, 1.5]])  # shape: [2, 3]
 
@@ -132,13 +133,18 @@ class MultivariateNormalDiag(
 
   """
 
+  @deprecation.deprecated_args(
+      '2020-01-01',
+      '`scale_identity_multiplier` is deprecated; please combine it with '
+      '`scale_diag` directly instead.',
+      'scale_identity_multiplier')
   def __init__(self,
                loc=None,
                scale_diag=None,
                scale_identity_multiplier=None,
                validate_args=False,
                allow_nan_stats=True,
-               name="MultivariateNormalDiag"):
+               name='MultivariateNormalDiag'):
     """Construct Multivariate Normal distribution on `R^k`.
 
     The `batch_shape` is the broadcast shape between `loc` and `scale`
@@ -183,7 +189,7 @@ class MultivariateNormalDiag(
         performance. When `False` invalid inputs may silently render incorrect
         outputs.
       allow_nan_stats: Python `bool`, default `True`. When `True`,
-        statistics (e.g., mean, mode, variance) use the value "`NaN`" to
+        statistics (e.g., mean, mode, variance) use the value '`NaN`' to
         indicate the result is undefined. When `False`, an exception is raised
         if one or more of the statistic's batch members are undefined.
       name: Python `str` name prefixed to Ops created by this class.
@@ -193,23 +199,56 @@ class MultivariateNormalDiag(
     """
     parameters = dict(locals())
     with tf.name_scope(name) as name:
-      with tf.name_scope("init"):
-        # No need to validate_args while making diag_scale.  The returned
-        # LinearOperatorDiag has an assert_non_singular method that is called by
-        # the Bijector.
-        scale = distribution_util.make_diag_scale(
-            loc=loc,
-            scale_diag=scale_diag,
-            scale_identity_multiplier=scale_identity_multiplier,
-            validate_args=False,
-            assert_positive=False)
-    super(MultivariateNormalDiag, self).__init__(
-        loc=loc,
-        scale=scale,
-        validate_args=validate_args,
-        allow_nan_stats=allow_nan_stats,
-        name=name)
-    self._parameters = parameters
+      dtype = dtype_util.common_dtype(
+          [loc, scale_diag, scale_identity_multiplier], dtype_hint=tf.float32)
+      loc = tensor_util.convert_nonref_to_tensor(loc, name='loc', dtype=dtype)
+      scale_diag = tensor_util.convert_nonref_to_tensor(
+          scale_diag, name='scale_diag', dtype=dtype)
+      if scale_diag is not None and scale_identity_multiplier is not None:
+        raise ValueError(
+            'Only one of `scale_diag` and `scale_identity_multiplier` is '
+            'allowed. Furthermore, `scale_identity_multiplier` is deprecated; '
+            'please combine it directly into `scale_diag` instead.')
+
+      if scale_diag is not None:
+        scale = tf.linalg.LinearOperatorDiag(
+            diag=scale_diag,
+            is_non_singular=True,
+            is_self_adjoint=True,
+            is_positive_definite=False)
+      else:
+        # Deprecated behavior; breaks variable-safety rules by calling
+        # `tf.shape(loc)`.
+        num_rows = tf.compat.dimension_value(loc.shape[-1])
+        if num_rows is None:
+          num_rows = tf.shape(loc)[-1]
+        if scale_identity_multiplier is not None:
+          scale_identity_multiplier = tensor_util.convert_nonref_to_tensor(
+              scale_identity_multiplier,
+              name='scale_identity_multiplier',
+              dtype=dtype)
+          scale = tf.linalg.LinearOperatorScaledIdentity(
+              num_rows=num_rows,
+              multiplier=scale_identity_multiplier,
+              is_non_singular=True,
+              is_self_adjoint=True,
+              is_positive_definite=False,
+              assert_proper_shapes=False)
+        else:
+          scale = tf.linalg.LinearOperatorIdentity(
+              num_rows=num_rows,
+              dtype=dtype,
+              is_self_adjoint=True,
+              is_positive_definite=True,
+              assert_proper_shapes=validate_args)
+
+      super(MultivariateNormalDiag, self).__init__(
+          loc=loc,
+          scale=scale,
+          validate_args=validate_args,
+          allow_nan_stats=allow_nan_stats,
+          name=name)
+      self._parameters = parameters
 
   @classmethod
   def _params_event_ndims(cls):

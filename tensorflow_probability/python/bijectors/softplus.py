@@ -25,11 +25,37 @@ from tensorflow_probability.python.bijectors import bijector
 from tensorflow_probability.python.internal import assert_util
 from tensorflow_probability.python.internal import distribution_util
 from tensorflow_probability.python.internal import dtype_util
+from tensorflow_probability.python.internal import tensor_util
 
 
 __all__ = [
-    "Softplus",
+    'Softplus',
 ]
+
+
+JAX_MODE = False  # Overwritten by rewrite script.
+
+
+# TODO(b/155501444): Remove this when tf.nn.softplus is fixed.
+if JAX_MODE:
+  _stable_grad_softplus = tf.nn.softplus
+else:
+
+  @tf.custom_gradient
+  def _stable_grad_softplus(x):
+    """A (more) numerically stable softplus than `tf.nn.softplus`."""
+    x = tf.convert_to_tensor(x)
+    if x.dtype == tf.float64:
+      cutoff = -20
+    else:
+      cutoff = -9
+
+    y = tf.where(x < cutoff, tf.math.log1p(tf.exp(x)), tf.nn.softplus(x))
+
+    def grad_fn(dy):
+      return dy * tf.where(x < cutoff, tf.exp(x), tf.nn.sigmoid(x))
+
+    return y, grad_fn
 
 
 class Softplus(bijector.Bijector):
@@ -77,36 +103,32 @@ class Softplus(bijector.Bijector):
 
   @distribution_util.AppendDocstring(
       kwargs_dict={
-          "hinge_softness": (
-              "Nonzero floating point `Tensor`.  Controls the softness of what "
-              "would otherwise be a kink at the origin.  Default is 1.0")})
+          'hinge_softness': (
+              'Nonzero floating point `Tensor`.  Controls the softness of what '
+              'would otherwise be a kink at the origin.  Default is 1.0')})
   def __init__(self,
                hinge_softness=None,
                validate_args=False,
-               name="softplus"):
+               name='softplus'):
+    parameters = dict(locals())
     with tf.name_scope(name) as name:
-      if hinge_softness is None:
-        self._hinge_softness = None
-      else:
-        self._hinge_softness = tf.convert_to_tensor(
-            hinge_softness, name="hinge_softness")
-        if validate_args:
-          nonzero_check = assert_util.assert_none_equal(
-              dtype_util.as_numpy_dtype(self._hinge_softness.dtype)(0),
-              self.hinge_softness,
-              message="hinge_softness must be non-zero")
-          self._hinge_softness = distribution_util.with_dependencies(
-              [nonzero_check], self.hinge_softness)
+      self._hinge_softness = tensor_util.convert_nonref_to_tensor(
+          hinge_softness, name='hinge_softness')
       super(Softplus, self).__init__(
           forward_min_event_ndims=0,
           validate_args=validate_args,
+          parameters=parameters,
           name=name)
+
+  @classmethod
+  def _is_increasing(cls):
+    return True
 
   def _forward(self, x):
     if self.hinge_softness is None:
-      return tf.math.softplus(x)
+      return _stable_grad_softplus(x)
     hinge_softness = tf.cast(self.hinge_softness, x.dtype)
-    return hinge_softness * tf.math.softplus(x / hinge_softness)
+    return hinge_softness * _stable_grad_softplus(x / hinge_softness)
 
   def _inverse(self, y):
     if self.hinge_softness is None:
@@ -137,3 +159,15 @@ class Softplus(bijector.Bijector):
   @property
   def hinge_softness(self):
     return self._hinge_softness
+
+  def _parameter_control_dependencies(self, is_init):
+    if not self.validate_args:
+      return []
+    assertions = []
+    if (self.hinge_softness is not None and
+        is_init != tensor_util.is_ref(self.hinge_softness)):
+      assertions.append(assert_util.assert_none_equal(
+          dtype_util.as_numpy_dtype(self._hinge_softness.dtype)(0),
+          self.hinge_softness,
+          message='Argument `hinge_softness` must be non-zero.'))
+    return assertions

@@ -18,7 +18,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import tensorflow as tf
+import tensorflow.compat.v2 as tf
 
 from tensorflow.python.framework import composite_tensor  # pylint: disable=g-direct-tensorflow-import
 from tensorflow.python.framework import type_spec  # pylint: disable=g-direct-tensorflow-import
@@ -40,7 +40,7 @@ class TensorTuple(composite_tensor.CompositeTensor):
 
   @property
   def _type_spec(self):
-    return TensorTupleSpec(map(type_spec.TypeSpec.from_value, self._sequence))
+    return TensorTupleSpec(map(type_spec.type_spec_from_value, self._sequence))
 
   def _to_components(self):
     return self._sequence

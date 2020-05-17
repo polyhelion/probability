@@ -23,17 +23,23 @@ import re
 
 # Dependency imports
 from absl import logging
-import numpy as np
+import numpy as np  # May be rewritten for JAX.
+import numpy as onp  # Avoid JAX rewrite.  # pylint: disable=reimported
 
+# TODO(b/151669121): Remove dependency of test_case on TF
 import tensorflow.compat.v2 as tf
 
 __all__ = [
+    'is_gpu_available',
     'Benchmark',
     'TestCase',
 ]
 
 
 # --- Begin Public Functions --------------------------------------------------
+
+
+is_gpu_available = lambda: False
 
 
 class Benchmark(tf.test.Benchmark):
@@ -44,12 +50,10 @@ class TestCase(tf.test.TestCase):
   """Wrapper of `tf.test.TestCase`."""
 
   def evaluate(self, x):
-    return x
+    return tf.nest.map_structure(onp.array, x)
 
   def _GetNdArray(self, a):
-    if isinstance(a, (np.generic, np.ndarray)):
-      return a
-    return np.array(a)
+    return onp.array(a)
 
   @contextlib.contextmanager
   def assertRaisesOpError(self, msg):
@@ -71,6 +75,15 @@ class TestCase(tf.test.TestCase):
     if isinstance(first, tuple) and isinstance(second, list):
       second = tuple(second)
 
+    if isinstance(first, np.ndarray):
+      second = onp.array(second)
+    if isinstance(second, np.ndarray):
+      first = onp.array(first)
+
     return super(TestCase, self).assertEqual(first, second, msg)
+
+  def assertShapeEqual(self, first, second, msg=None):
+    self.assertTupleEqual(first.shape, second.shape, msg=msg)
+
 
 main = tf.test.main

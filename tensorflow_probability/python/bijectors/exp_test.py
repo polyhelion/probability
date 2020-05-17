@@ -19,17 +19,16 @@ from __future__ import division
 from __future__ import print_function
 
 # Dependency imports
+
 import numpy as np
 import tensorflow.compat.v2 as tf
 from tensorflow_probability.python import bijectors as tfb
-
 from tensorflow_probability.python.bijectors import bijector_test_util
-from tensorflow_probability.python.internal import test_util as tfp_test_util
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
+from tensorflow_probability.python.internal import test_util
 
 
-@test_util.run_all_in_graph_and_eager_modes
-class ExpBijectorTest(tf.test.TestCase):
+@test_util.test_all_tf_execution_regimes
+class ExpBijectorTest(test_util.TestCase):
   """Tests correctness of the Y = g(X) = exp(X) transformation."""
 
   def testBijector(self):
@@ -62,7 +61,7 @@ class ExpBijectorTest(tf.test.TestCase):
     bijector_test_util.assert_bijective_and_finite(
         bijector, x, y, eval_func=self.evaluate, event_ndims=0)
 
-  @tfp_test_util.numpy_disable_gradient_test
+  @test_util.numpy_disable_gradient_test
   def testJacobian(self):
     bijector = tfb.Exp()
     x = tf.constant([22.])
@@ -78,6 +77,27 @@ class ExpBijectorTest(tf.test.TestCase):
         bijector, x, event_ndims=1)
     fldj_, fldj_theoretical_ = self.evaluate([fldj, fldj_theoretical])
     self.assertAllClose(fldj_, fldj_theoretical_)
+
+
+@test_util.test_all_tf_execution_regimes
+class LogBijectorTest(test_util.TestCase):
+
+  def testBijectorIsInvertExp(self):
+    x = np.linspace(1., 10., num=200)
+    log = tfb.Log()
+    invert_exp = tfb.Invert(tfb.Exp())
+    self.assertAllClose(
+        self.evaluate(log.forward(x)),
+        self.evaluate(invert_exp.forward(x)))
+    self.assertAllClose(
+        self.evaluate(log.inverse(x)),
+        self.evaluate(invert_exp.inverse(x)))
+    self.assertAllClose(
+        self.evaluate(log.forward_log_det_jacobian(x, event_ndims=1)),
+        self.evaluate(invert_exp.forward_log_det_jacobian(x, event_ndims=1)))
+    self.assertAllClose(
+        self.evaluate(log.inverse_log_det_jacobian(x, event_ndims=1)),
+        self.evaluate(invert_exp.inverse_log_det_jacobian(x, event_ndims=1)))
 
 
 if __name__ == '__main__':

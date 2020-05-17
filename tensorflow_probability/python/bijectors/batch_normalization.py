@@ -20,6 +20,7 @@ from __future__ import print_function
 
 
 # Dependency imports
+import tensorflow.compat.v1 as tf1
 import tensorflow.compat.v2 as tf
 
 from tensorflow_probability.python.bijectors import bijector
@@ -146,20 +147,23 @@ class BatchNormalization(bijector.Bijector):
         `tf.layers.BatchNormalization`, or if it is specified with `renorm=True`
         or a virtual batch size.
     """
-    # Scale must be positive.
-    g_constraint = lambda x: tf.nn.relu(x) + 1e-6
-    self.batchnorm = batchnorm_layer or tf.keras.layers.BatchNormalization(
-        gamma_constraint=g_constraint)
-    self._validate_bn_layer(self.batchnorm)
-    self._training = training
-    if isinstance(self.batchnorm.axis, int):
-      forward_min_event_ndims = 1
-    else:
-      forward_min_event_ndims = len(self.batchnorm.axis)
-    super(BatchNormalization, self).__init__(
-        forward_min_event_ndims=forward_min_event_ndims,
-        validate_args=validate_args,
-        name=name)
+    parameters = dict(locals())
+    with tf.name_scope(name) as name:
+      # Scale must be positive.
+      g_constraint = lambda x: tf.nn.relu(x) + 1e-6
+      self.batchnorm = batchnorm_layer or tf.keras.layers.BatchNormalization(
+          gamma_constraint=g_constraint)
+      self._validate_bn_layer(self.batchnorm)
+      self._training = training
+      if isinstance(self.batchnorm.axis, int):
+        forward_min_event_ndims = 1
+      else:
+        forward_min_event_ndims = len(self.batchnorm.axis)
+      super(BatchNormalization, self).__init__(
+          forward_min_event_ndims=forward_min_event_ndims,
+          validate_args=validate_args,
+          parameters=parameters,
+          name=name)
 
   def _validate_bn_layer(self, layer):
     """Check for valid BatchNormalization layer.
@@ -172,7 +176,7 @@ class BatchNormalization(bijector.Bijector):
       if `batchnorm_layer.virtual_batch_size` is specified.
     """
     if (not isinstance(layer, tf.keras.layers.BatchNormalization) and
-        not isinstance(layer, tf.compat.v1.layers.BatchNormalization)):
+        not isinstance(layer, tf1.layers.BatchNormalization)):
       raise ValueError(
           'batchnorm_layer must be an instance of '
           '`tf.keras.layers.BatchNormalization` or '
